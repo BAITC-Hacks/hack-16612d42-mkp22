@@ -1049,4 +1049,4 @@ def chat(body: ChatRequest, request: Request) -> ChatResponse:
         log.error("Unexpected backend error: %s", type(exc).__name__)
         fail(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.")
 
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")git status
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
