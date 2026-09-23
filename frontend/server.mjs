@@ -7,6 +7,10 @@ const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/ui-model.js', ['ui-model.js', 'text/javascript; charset=utf-8']],
+  ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
+  ['/locales.js', ['locales.js', 'text/javascript; charset=utf-8']],
+  ['/api.js', ['api.js', 'text/javascript; charset=utf-8']],
+  ['/viewport.js', ['viewport.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
 ]);
 
@@ -33,7 +37,7 @@ http.createServer(async (req, res) => {
       res.end(await upstream.text());
     } catch {
       res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ detail: { message: 'Сервер консультанта недоступен. Проверьте, что backend запущен, и повторите запрос.' } }));
+      res.end(JSON.stringify({ detail: { code: 'FRONTEND_PROXY_UNAVAILABLE', message: 'Assistant service unavailable.' } }));
     }
     return;
   }

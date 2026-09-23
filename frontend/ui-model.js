@@ -1,3 +1,5 @@
+import { t, getLocale } from './i18n.js';
+
 // Presentation helpers. The server remains the authority for catalog and cart state.
 export function safeUrl(value) {
   if (typeof value !== 'string' || !/^https?:\/\//i.test(value)) return null;
@@ -9,7 +11,7 @@ export function safeUrl(value) {
 
 export function characteristics(value) {
   if (typeof value === 'string') {
-    try { value = JSON.parse(value); } catch { return value.trim() ? [['Описание', value]] : []; }
+    try { value = JSON.parse(value); } catch { return value.trim() ? [[t('common.description'), value]] : []; }
   }
   const rows = [];
   function visit(entry, label = '', depth = 0) {
@@ -17,15 +19,15 @@ export function characteristics(value) {
     if (Array.isArray(entry)) {
       entry.forEach((item, index) => {
         if (item && typeof item === 'object' && !Array.isArray(item) && ('value' in item || 'значение' in item)) {
-          const key = item.name ?? item.label ?? item.key ?? item.название ?? label ?? `Параметр ${index + 1}`;
+          const key = item.name ?? item.label ?? item.key ?? item.название ?? (label || t('common.parameter', { index: index + 1 }));
           const val = item.value ?? item.значение;
           visit(val, String(key), depth + 1);
           if (item.unit && rows.length) rows[rows.length - 1][1] += ` ${item.unit}`;
-        } else visit(item, label ? `${label} ${index + 1}` : `Параметр ${index + 1}`, depth + 1);
+        } else visit(item, label ? `${label} ${index + 1}` : t('common.parameter', { index: index + 1 }), depth + 1);
       });
     } else if (typeof entry === 'object') {
       for (const [key, val] of Object.entries(entry)) visit(val, label ? `${label} · ${key}` : key, depth + 1);
-    } else rows.push([label || 'Описание', typeof entry === 'boolean' ? (entry ? 'Да' : 'Нет') : String(entry)]);
+    } else rows.push([label || t('common.description'), typeof entry === 'boolean' ? t(entry ? 'common.yes' : 'common.no') : String(entry)]);
   }
   visit(value);
   return rows;
@@ -33,13 +35,13 @@ export function characteristics(value) {
 
 export function productCode(product) {
   const article = characteristics(product.characteristics).find(([key]) => /^(артикул|article|sku)$/i.test(key));
-  return article ? `Артикул: ${article[1]}` : `Код товара: ${product.id}`;
+  return t(article ? 'products.sku' : 'products.code', { id: article ? article[1] : product.id });
 }
 
 export function certificate(product) {
   const entries = characteristics(product.characteristics).filter(([key]) => /сертификат|certificate/i.test(key));
   const linked = entries.find(([, value]) => safeUrl(value));
-  if (linked) return { label: 'Сертификат', url: safeUrl(linked[1]) };
+  if (linked) return { label: t('products.certificate'), url: safeUrl(linked[1]) };
   return entries.length ? { label: entries.map(([, value]) => value).join(' · '), url: null } : null;
 }
 
@@ -48,9 +50,9 @@ export function selectable(product) {
 }
 
 export function money(price, currency) {
-  if (!Number.isFinite(price)) return 'Цена не указана';
-  const amount = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(price);
-  return `${amount} ${currency === 'KZT' ? '₸' : currency || '(валюта не указана)'}`;
+  if (!Number.isFinite(price)) return t('products.priceUnknown');
+  const amount = new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 2 }).format(price);
+  return `${amount} ${currency === 'KZT' ? '₸' : currency || t('common.currencyUnknown')}`;
 }
 
 export function validResponse(data) {

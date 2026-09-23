@@ -1,4 +1,8 @@
 import { safeUrl, characteristics, productCode, certificate, selectable, money, validResponse } from './ui-model.js';
+import { t, bind, getLanguage, getLocale, setLanguage, applyTranslations, onLanguageChange, pruneBindings } from './i18n.js';
+import { translations } from './locales.js';
+import { createChatPayload } from './api.js';
+import { observeViewport } from './viewport.js';
 
 const $ = selector => document.querySelector(selector);
 const conversation = $('#conversation');
@@ -18,6 +22,13 @@ function node(tag, text, className) {
   return el;
 }
 
+function lnode(tag, key, className, params = {}) {
+  return bind(node(tag, null, className), () => t(key, typeof params === 'function' ? params() : params));
+}
+function dynamicNode(tag, compute, className) {
+  return bind(node(tag, null, className), compute);
+}
+
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'icon');
@@ -28,25 +39,25 @@ function icon(name) {
   return svg;
 }
 
-function button(text, onClick, style = 'button-secondary', action = false) {
-  const el = node('button', text, `button ${style}`);
+function button(key, onClick, style = 'button-secondary', action = false) {
+  const el = lnode('button', key, `button ${style}`);
   el.type = 'button';
   if (action) { el.dataset.requestAction = ''; el.disabled = busy; }
   el.addEventListener('click', onClick);
   return el;
 }
 
-function announce(text) { $('#announcement').textContent = text; }
+function announce(key) { bind($('#announcement'), () => t(key)); }
 function connection(online) {
   $('#connection').dataset.state = online ? 'online' : 'offline';
-  $('#connection-text').textContent = online ? 'Сервер на связи' : 'Не удалось связаться с сервером';
+  bind($('#connection-text'), () => t(online ? 'connection.online' : 'connection.offline'));
 }
 function nearBottom() { return conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 90; }
 function scrollLatest() { conversation.scrollTop = conversation.scrollHeight; $('#scroll-latest').hidden = true; }
 function updateInput() {
   const input = $('#query');
   $('#send').disabled = busy || !input.value.trim() || input.value.length > 2000;
-  $('#character-count').textContent = input.value.length > 1600 ? `${input.value.length} / 2000` : 'Можно указать название или артикул';
+  bind($('#character-count'), () => input.value.length > 1600 ? t('chat.characterCount', { count: input.value.length }) : t('chat.inputHint'));
   input.style.height = 'auto';
   input.style.height = `${Math.min(144, input.scrollHeight)}px`;
 }
@@ -55,7 +66,7 @@ function setBusy(value) {
   $('#reset').disabled = value;
   $('#retry').disabled = value;
   document.querySelectorAll('[data-query], [data-request-action]').forEach(el => { el.disabled = value; });
-  $('#send-label').textContent = value ? 'Ожидаем' : 'Отправить';
+  bind($('#send-label'), () => t(busy ? 'chat.waiting' : 'chat.send'));
   updateInput();
 }
 
@@ -87,65 +98,66 @@ function message(role, text) {
   const el = node('article', null, `message ${role}`);
   const label = node('div', null, 'message-label');
   if (role === 'assistant') label.append(icon('chat'));
-  label.append(node('span', role === 'user' ? 'Вы' : 'EKT · AI-консультант'));
-  const time = node('time', new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
-  time.dateTime = new Date().toISOString();
+  label.append(lnode('span', role === 'user' ? 'chat.you' : 'assistant.messageName'));
+  const createdAt = new Date();
+  const time = dynamicNode('time', () => createdAt.toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }));
+  time.dateTime = createdAt.toISOString();
   label.append(time);
   el.append(label);
   if (text) el.append(role === 'user' ? node('div', text, 'message-body') : formattedText(text));
   conversation.append(el);
   return el;
 }
-function clearProposal(text = 'Предложение закрыто. Вы можете выбрать товар из карточки заново.') {
+function clearProposal(key = 'confirmation.closed') {
   if (!pendingProposal) return;
-  pendingProposal.replaceWith(node('p', text, 'muted-note'));
+  pendingProposal.replaceWith(lnode('p', key, 'muted-note'));
   pendingProposal = null;
 }
 function specs(product, limit = Infinity) {
-  const rows = characteristics(product.characteristics).filter(([key]) => !/сертификат|certificate/i.test(key));
-  if (!rows.length) return node('p', 'Характеристики не указаны в каталоге.', 'muted-note');
+  const getRows = () => characteristics(product.characteristics).filter(([key]) => !/сертификат|certificate/i.test(key));
+  const rows = getRows();
+  if (!rows.length) return lnode('p', 'products.noSpecs', 'muted-note');
   const dl = node('dl', null, 'spec-list');
-  for (const [key, value] of rows.slice(0, limit)) {
+  for (let index = 0; index < Math.min(rows.length, limit); index++) {
     const row = node('div', null, 'spec-row');
-    row.append(node('dt', key), node('dd', value)); dl.append(row);
+    row.append(dynamicNode('dt', () => getRows()[index][0]), dynamicNode('dd', () => getRows()[index][1])); dl.append(row);
   }
   return dl;
 }
 function stockBadge(product) {
   const stock = product.stock;
-  if (stock == null || !Number.isFinite(stock)) return node('span', 'Наличие уточняется', 'badge badge-unknown');
-  if (stock <= 0) return node('span', 'Нет в наличии', 'badge badge-unavailable');
-  return node('span', `В наличии: ${stock}${product.unit ? ` ${product.unit}` : ' (единица не указана)'}`, 'badge badge-stock');
+  if (stock == null || !Number.isFinite(stock)) return lnode('span', 'products.stockUnknown', 'badge badge-unknown');
+  if (stock <= 0) return lnode('span', 'products.unavailable', 'badge badge-unavailable');
+  return lnode('span', 'products.available', 'badge badge-stock', () => ({ stock, unit: product.unit || t('products.unitUnknown') }));
 }
 function certificateInfo(product, showMissing = false) {
   const cert = certificate(product);
-  if (!cert) return showMissing ? node('p', 'Сертификат не предоставлен в данных каталога.', 'muted-note') : null;
-  if (!cert.url) return node('p', `Сертификат: ${cert.label}`, 'muted-note');
+  if (!cert) return showMissing ? lnode('p', 'products.noCertificate', 'muted-note') : null;
+  if (!cert.url) return lnode('p', 'products.certificateValue', 'muted-note', () => ({ name: certificate(product).label }));
   const link = node('a', null, 'certificate-link');
   link.href = cert.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-  link.append(icon('file'), node('span', 'Сертификат ↗'));
-  link.setAttribute('aria-label', 'Открыть сертификат в новой вкладке');
+  link.append(icon('file'), lnode('span', 'products.certificateLink'));
+  bind(link, () => t('products.openCertificate'), 'aria-label');
   return link;
 }
 function price(product) {
-  const el = node('div', money(product.price, product.currency), 'product-price');
+  const el = node('div', null, 'product-price');
+  el.append(dynamicNode('span', () => money(product.price, product.currency)));
   if (product.price != null && product.unit) el.append(node('small', ` / ${product.unit}`));
   return el;
 }
 function askAbout(product) {
-  const query = product.stock === 0
-    ? `Подбери возможный аналог товара «${product.name}» (код ${product.id}) с учётом его характеристик. Объясни различия.`
-    : `Уточни наличие и единицу измерения товара «${product.name}» (код ${product.id}).`;
+  const query = t(product.stock === 0 ? 'products.analogueQuery' : 'products.stockQuery', { name: product.name, id: product.id });
   return send(query.slice(0, 2000));
 }
 function productAction(product) {
-  if (selectable(product)) return button('Выбрать для корзины', () => openConfirmation([{ product, quantity: Math.min(1, product.stock) }]), 'button-primary', true);
-  return button(product.stock === 0 ? 'Подобрать аналог' : 'Уточнить наличие', () => askAbout(product), 'button-secondary', true);
+  if (selectable(product)) return button('cart.add', () => openConfirmation([{ product, quantity: Math.min(1, product.stock) }]), 'button-primary', true);
+  return button(product.stock === 0 ? 'products.findAnalogue' : 'products.checkStock', () => askAbout(product), 'button-secondary', true);
 }
 function openDetails(product) {
   const body = $('#product-detail'); body.replaceChildren();
-  body.append(node('p', productCode(product), 'product-code'), node('h3', product.name), stockBadge(product));
-  if (product.kind === 'possible_analogue') body.append(node('p', 'Возможный аналог. Проверьте техническую совместимость перед покупкой.', 'muted-note'));
+  body.append(dynamicNode('p', () => productCode(product), 'product-code'), node('h3', product.name), stockBadge(product));
+  if (product.kind === 'possible_analogue') body.append(lnode('p', 'products.analogueNote', 'muted-note'));
   body.append(price(product), node('p', product.reason, 'product-reason'), specs(product));
   const cert = certificateInfo(product, true); if (cert) body.append(cert);
   const action = productAction(product);
@@ -156,26 +168,26 @@ function openDetails(product) {
 function renderProducts(parent, products) {
   if (!products.length) {
     const empty = node('div', null, 'state-panel empty-results');
-    empty.append(node('h3', 'Пока нет товаров для показа'), node('p', 'Уточните название, артикул или параметры. Если ассистент задал вопрос — ответьте, чтобы продолжить подбор.'));
-    empty.append(button('Уточнить запрос', () => { $('#query').focus(); }, 'button-secondary'));
+    empty.append(lnode('h3', 'products.notFound'), lnode('p', 'products.notFoundDescription'));
+    empty.append(button('products.refine', () => { $('#query').focus(); }, 'button-secondary'));
     parent.append(empty); return;
   }
-  parent.append(node('h3', `Товары по вашему запросу · ${products.length}`, 'results-heading'));
+  parent.append(lnode('h3', 'products.results', 'results-heading', { count: products.length }));
   const grid = node('div', null, `product-grid${products.length === 1 ? ' single' : ''}`);
   for (const product of products) {
     const card = node('section', null, 'product-card');
     const top = node('div', null, 'product-topline');
-    if (product.kind === 'possible_analogue') top.append(node('span', 'Возможный аналог', 'badge badge-analogue'));
-    top.append(node('span', productCode(product), 'product-code'));
+    if (product.kind === 'possible_analogue') top.append(lnode('span', 'products.analogue', 'badge badge-analogue'));
+    top.append(dynamicNode('span', () => productCode(product), 'product-code'));
     card.append(top, node('h3', product.name), stockBadge(product), specs(product, 3));
     if (product.reason) card.append(node('p', product.reason, 'product-reason'));
-    if (product.kind === 'possible_analogue') card.append(node('p', 'Совместимость требует проверки.', 'muted-note'));
+    if (product.kind === 'possible_analogue') card.append(lnode('p', 'products.compatibility', 'muted-note'));
     const cert = certificateInfo(product); if (cert) card.append(cert);
     card.append(price(product));
     const actions = node('div', null, 'product-actions');
-    actions.append(button('Подробнее', () => openDetails(product)), productAction(product));
+    actions.append(button('products.details', () => openDetails(product)), productAction(product));
     card.append(actions);
-    if (!selectable(product)) card.append(node('p', 'Для выбора нужны подтверждённое наличие и единица измерения.', 'muted-note'));
+    if (!selectable(product)) card.append(lnode('p', 'products.selectionRequirements', 'muted-note'));
     grid.append(card);
   }
   parent.append(grid);
@@ -189,18 +201,18 @@ function openConfirmation(items) {
   confirmation.forEach((item, index) => {
     const { product } = item;
     const row = node('section', null, 'confirm-item');
-    row.append(node('h3', product.name), node('p', productCode(product), 'product-code'));
-    if (product.kind === 'possible_analogue') row.append(node('p', 'Возможный аналог: перед выбором проверьте совместимость.', 'muted-note'));
+    row.append(node('h3', product.name), dynamicNode('p', () => productCode(product), 'product-code'));
+    if (product.kind === 'possible_analogue') row.append(lnode('p', 'products.confirmAnalogueNote', 'muted-note'));
     row.append(stockBadge(product));
     const control = node('div', null, 'quantity-control');
-    const label = node('label', 'Количество'); label.htmlFor = `quantity-${index}`;
+    const label = lnode('label', 'confirmation.quantity'); label.htmlFor = `quantity-${index}`;
     const input = node('input');
     input.id = label.htmlFor; input.type = 'number'; input.min = '0'; input.step = 'any'; input.max = String(Math.min(product.stock, 1_000_000)); input.required = true;
     input.value = String(item.quantity); input.inputMode = 'decimal';
-    input.setAttribute('aria-label', `Количество: ${product.name}, ${product.unit}`);
+    bind(input, () => t('confirmation.quantityLabel', { name: product.name, unit: product.unit }), 'aria-label');
     input.addEventListener('input', () => {
       item.quantity = input.valueAsNumber;
-      input.setCustomValidity(item.quantity > 0 ? '' : 'Укажите количество больше нуля.');
+      validateQuantity(input, item);
       updateTotal();
     });
     control.append(label, input, node('span', product.unit)); row.append(control); container.append(row);
@@ -214,8 +226,13 @@ function updateTotal() {
   const currencies = new Set(confirmation.map(item => item.product.currency));
   if (valid && currencies.size === 1 && [...currencies][0] && confirmation.every(item => Number.isFinite(item.product.price))) {
     const total = confirmation.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-    $('#confirm-total').textContent = `По данным каталога: ${money(total, [...currencies][0])}`;
-  } else $('#confirm-total').textContent = 'Итоговая сумма будет зависеть от актуальных цен и наличия.';
+    bind($('#confirm-total'), () => t('confirmation.total', { amount: money(total, [...currencies][0]) }));
+  } else bind($('#confirm-total'), () => t('confirmation.totalUnknown'));
+}
+
+function validateQuantity(input, item) {
+  const stock = Math.min(item.product.stock, 1_000_000);
+  input.setCustomValidity(!Number.isFinite(item.quantity) || item.quantity <= 0 ? t('confirmation.quantityInvalid') : item.quantity > stock ? t('confirmation.quantityMaximum', { stock, unit: item.product.unit }) : '');
 }
 
 function renderProposal(parent, data, responseId) {
@@ -223,11 +240,11 @@ function renderProposal(parent, data, responseId) {
   const items = data.cart.items.map(item => ({ product: data.products.find(p => p.id === item.product_id), quantity: item.quantity }));
   if (items.some(item => !item.product || !selectable(item.product))) return;
   const panel = node('div', null, 'state-panel confirmation-proposal');
-  panel.append(node('h3', 'Выбор ждёт вашего подтверждения'), node('p', 'Ничего не добавлено. Проверьте позиции и количество.'));
+  panel.append(lnode('h3', 'confirmation.pendingTitle'), lnode('p', 'confirmation.pendingDescription'));
   const list = node('ul', null, 'proposal-list');
   for (const item of items) list.append(node('li', `${item.product.name} — ${item.quantity} ${item.product.unit}`));
-  panel.append(list, button('Проверить и подтвердить', () => { if (responseId === lastResponseId) openConfirmation(items); }, 'button-primary', true));
-  panel.append(button('Отмена', () => clearProposal('Предложение отменено. Ничего не добавлено.')));
+  panel.append(list, button('confirmation.review', () => { if (responseId === lastResponseId) openConfirmation(items); }, 'button-primary', true));
+  panel.append(button('common.cancel', () => clearProposal('confirmation.cancelled')));
   parent.append(panel); pendingProposal = panel;
 }
 function renderOutcome(parent, data, requestedItems) {
@@ -235,36 +252,36 @@ function renderOutcome(parent, data, requestedItems) {
   const added = data.cart.added_to_cart === true;
   lastCartUrl = added ? safeUrl(data.cart.cart_url) : null;
   const panel = node('div', null, `state-panel ${added ? 'success cart-success' : 'selection-confirmed'}`);
-  panel.append(node('h3', added ? 'Товары добавлены в корзину' : 'Выбор подтверждён'));
-  panel.append(node('p', added ? 'Добавление подтверждено магазином. Можно перейти к оформлению.' : 'Наличие проверено. Товары не добавлены в корзину EKT: сервис добавления пока недоступен.'));
+  panel.append(lnode('h3', added ? 'cart.success' : 'selection.confirmed'));
+  panel.append(lnode('p', added ? 'cart.successDescription' : 'selection.confirmedDescription'));
   for (const item of data.cart.items) {
     const product = data.products.find(p => p.id === item.product_id);
     if (product) selected.set(product.id, { product, quantity: item.quantity, added });
   }
   $('#selection-count').textContent = String(selected.size);
   if (added && lastCartUrl) {
-    const link = node('a', 'Перейти в корзину', 'button button-primary');
+    const link = lnode('a', 'cart.open', 'button button-primary');
     link.href = lastCartUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; panel.append(link);
-  } else panel.append(button('Посмотреть выбранные товары', openSelection));
+  } else panel.append(button('selection.view', openSelection));
   parent.append(panel);
-  announce(added ? 'Товары добавлены в корзину.' : 'Выбор подтверждён. Товары не добавлены в корзину EKT.');
+  announce(added ? 'cart.successAnnouncement' : 'selection.confirmedAnnouncement');
 }
 function openSelection() {
   const container = $('#selection-content'); container.replaceChildren();
   if (!selected.size) {
     const empty = node('div', null, 'selection-empty');
-    empty.append(icon('cart'), node('h3', 'Вы пока не выбрали товары'), node('p', 'Начните с поиска в чате. В карточке нажмите «Выбрать для корзины» и подтвердите количество.'));
-    empty.append(button('Найти товар', () => { $('#selection-dialog').close(); $('#query').focus(); }, 'button-primary'));
+    empty.append(icon('cart'), lnode('h3', 'selection.empty'), lnode('p', 'selection.emptyDescription'));
+    empty.append(button('selection.find', () => { $('#selection-dialog').close(); $('#query').focus(); }, 'button-primary'));
     container.append(empty);
   } else {
-    container.append(node('p', 'Подтверждённые позиции текущего диалога. Наличие не резервируется.'));
+    container.append(lnode('p', 'selection.description'));
     for (const { product, quantity, added } of selected.values()) {
       const entry = node('section', null, 'selection-entry');
-      entry.append(node('h3', product.name), node('p', `${quantity} ${product.unit} · ${productCode(product)}`, 'muted-note'));
-      entry.append(node('span', added ? 'Добавлено в корзину' : 'Выбор подтверждён · не в корзине', 'badge badge-stock')); container.append(entry);
+      entry.append(node('h3', product.name), dynamicNode('p', () => `${quantity} ${product.unit} · ${productCode(product)}`, 'muted-note'));
+      entry.append(lnode('span', added ? 'cart.added' : 'selection.confirmedBadge', 'badge badge-stock')); container.append(entry);
     }
   }
-  if (![...selected.values()].some(item => item.added)) container.append(node('p', 'Добавление в корзину EKT пока недоступно. Этот список не является заказом.', 'muted-note'));
+  if (![...selected.values()].some(item => item.added)) container.append(lnode('p', 'selection.notOrder', 'muted-note'));
   $('#selection-dialog').showModal();
 }
 
@@ -285,27 +302,29 @@ async function send(query, items = [], retry = false) {
   typing.setAttribute('role', 'status');
   const dots = node('span', null, 'typing-dots'); dots.setAttribute('aria-hidden', 'true');
   dots.append(node('i'), node('i'), node('i'));
-  const status = node('span', items.length ? 'Проверяем актуальное наличие…' : 'Проверяем каталог…');
+  let loadingKey = items.length ? 'chat.checkingStock' : 'chat.checkingCatalog';
+  const status = dynamicNode('span', () => t(loadingKey));
   typing.append(dots, status); loading.append(typing);
   scrollLatest();
   // /api/chat is not streaming. This describes waiting, not received tokens.
-  const typingTimer = setTimeout(() => { if (!items.length) status.textContent = 'Ассистент готовит ответ…'; }, 1600);
-  const slowTimer = setTimeout(() => { status.textContent = 'Запрос занимает больше времени. Ждём ответ сервера…'; }, 18000);
+  const typingTimer = setTimeout(() => { if (!items.length) { loadingKey = 'chat.typing'; status.textContent = t(loadingKey); } }, 1600);
+  const slowTimer = setTimeout(() => { loadingKey = 'chat.slow'; status.textContent = t(loadingKey); }, 18000);
   const confirmCart = items.map(item => ({ product_id: item.product.id, quantity: item.quantity }));
   try {
     const response = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, history: previousHistory, confirm_cart: confirmCart }),
+      body: JSON.stringify(createChatPayload({ query, history: previousHistory, confirmCart, language: getLanguage() })),
       signal: AbortSignal.timeout(125_000),
     });
     let data;
-    try { data = await response.json(); } catch { throw new Error('Сервер вернул ответ, который не удалось прочитать. Попробуйте ещё раз.'); }
+    try { data = await response.json(); } catch { throw Object.assign(new Error('Invalid JSON'), { translationKey: 'errors.invalidResponse' }); }
     if (!response.ok) {
-      const error = new Error(typeof data.detail?.message === 'string' ? data.detail.message : 'Не удалось обработать запрос. Уточните вопрос или повторите попытку.');
+      const error = new Error('Chat request failed');
       error.status = response.status;
+      error.translationKey = errorKey(data.detail?.code, response.status);
       throw error;
     }
-    if (!validResponse(data)) throw new Error('Не удалось прочитать данные каталога. Повторите запрос.');
+    if (!validResponse(data)) throw Object.assign(new Error('Invalid catalog response'), { translationKey: 'errors.invalidResponse' });
     const follow = nearBottom();
     loading.remove();
     const reply = message('assistant', data.answer);
@@ -314,11 +333,15 @@ async function send(query, items = [], retry = false) {
     renderProposal(reply, data, responseId);
     const meta = node('div', null, 'answer-meta');
     const checked = new Date(data.catalog_checked_at);
-    if (data.catalog_checked_at && !Number.isNaN(checked.valueOf())) meta.append(node('span', `Каталог проверен: ${checked.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`));
+    if (data.catalog_checked_at && !Number.isNaN(checked.valueOf())) meta.append(lnode('span', 'chat.catalogChecked', null, () => ({ date: checked.toLocaleString(getLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })));
     if (Array.isArray(data.warnings) && data.warnings.length) {
-      const details = node('details'); details.append(node('summary', 'Что важно учесть'));
+      const details = node('details'); details.append(lnode('summary', 'chat.warnings'));
       const list = node('ul');
-      data.warnings.filter(warning => typeof warning === 'string').forEach(warning => list.append(node('li', warning)));
+      data.warnings.filter(warning => typeof warning === 'string').forEach(warning => {
+        const key = ['warnings.catalog', 'warnings.analogues'].find(key => translations.ru[key] === warning);
+        // Unknown catalog/AI prose is source data; do not translate it heuristically.
+        list.append(key ? lnode('li', key) : node('li', warning));
+      });
       details.append(list); meta.append(details);
     }
     reply.append(meta);
@@ -332,19 +355,32 @@ async function send(query, items = [], retry = false) {
     $('#scroll-latest').hidden = nearBottom();
   } catch (error) {
     loading.remove();
-    $('#error-title').textContent = items.length ? 'Не удалось подтвердить выбор' : 'Не удалось получить ответ';
+    bind($('#error-title'), () => t(items.length ? 'errors.confirmTitle' : 'errors.answerTitle'));
     const timeout = error.name === 'TimeoutError' || error.name === 'AbortError';
-    $('#error-message').textContent = timeout ? 'Сервер не ответил вовремя. Попробуйте ещё раз.' : error.message === 'Failed to fetch' ? 'Проверьте соединение и повторите запрос.' : error.message;
-    if (items.length) $('#error-message').append(document.createTextNode(' Ничего не подтверждено в интерфейсе. Проверьте актуальное наличие перед новой попыткой.'));
+    const key = timeout ? 'errors.timeout' : error.translationKey || (error instanceof TypeError ? 'errors.network' : 'errors.generic');
+    bind($('#error-message'), () => `${t(key)}${items.length ? ` ${t('errors.confirmFailureNote')}` : ''}`);
     $('#error').hidden = false;
     retryRequest = { query, items, retry: true };
-    $('#retry').textContent = items.length ? 'Проверить выбор' : 'Повторить';
+    bind($('#retry'), () => t(items.length ? 'confirmation.retry' : 'common.retry'));
     if (error.status >= 500 || error instanceof TypeError || timeout) connection(false);
-    announce('Не удалось выполнить запрос. Доступна повторная попытка.');
+    announce('errors.announcement');
   } finally {
     clearTimeout(typingTimer); clearTimeout(slowTimer);
+    pruneBindings();
     setBusy(false);
   }
+}
+
+function errorKey(code, status) {
+  if (typeof code !== 'string') code = '';
+  if (code === 'CART_UNAVAILABLE') return 'errors.cartUnavailable';
+  if (code === 'CART_INVALID') return 'errors.cartInvalid';
+  if (code === 'AI_REFUSAL') return 'errors.refusal';
+  if (code?.endsWith('_TIMEOUT') || status === 504) return 'errors.timeout';
+  if (code?.endsWith('_SCHEMA') || ['AI_INCOMPLETE', 'AI_PRODUCT_ID', 'AI_ANALOGUE'].includes(code)) return 'errors.invalidResponse';
+  if (status === 413) return 'errors.limit';
+  if (status >= 500 || status === 429) return 'errors.unavailable';
+  return 'errors.generic';
 }
 
 $('#chat-form').addEventListener('submit', event => { event.preventDefault(); send($('#query').value); });
@@ -352,14 +388,14 @@ $('#query').addEventListener('input', updateInput);
 $('#query').addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send($('#query').value); }
 });
-document.querySelectorAll('[data-query]').forEach(el => el.addEventListener('click', () => send(el.dataset.query)));
+document.querySelectorAll('[data-query]').forEach(el => el.addEventListener('click', () => send(t(el.dataset.query))));
 $('#confirm-form').addEventListener('submit', event => {
   event.preventDefault();
   if (busy || $('#confirm-submit').disabled || !$('#confirm-form').reportValidity()) return;
   const items = confirmation.map(item => ({ ...item }));
   $('#confirm-dialog').close();
-  const description = items.map(item => `${item.product.name.slice(0, 160)} (код ${item.product.id}), ${item.quantity} ${item.product.unit}`).join('; ');
-  send(`Подтверждаю выбор для корзины: ${description}`.slice(0, 2000), items);
+  const description = items.map(item => t('confirmation.item', { name: item.product.name.slice(0, 160), id: item.product.id, count: item.quantity, unit: item.product.unit })).join('; ');
+  send(t('confirmation.query', { items: description }).slice(0, 2000), items);
 });
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(`#${el.dataset.close}`).close()));
 document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => {
@@ -376,7 +412,7 @@ $('#retry').addEventListener('click', () => {
 $('#error-close').addEventListener('click', () => { $('#error').hidden = true; });
 $('#selection-open').addEventListener('click', openSelection);
 $('#help-example').addEventListener('click', () => {
-  $('#query').value = 'Нужен автоматический выключатель 16А, 1 полюс, характеристика C. Какие варианты есть в наличии?';
+  $('#query').value = t('help.exampleQuery');
   updateInput(); $('#query').focus();
 });
 $('#scroll-latest').addEventListener('click', scrollLatest);
@@ -385,11 +421,24 @@ $('#reset').addEventListener('click', () => {
   if (busy) return;
   clearProposal(); history.length = 0; selected.clear(); retryRequest = null; lastCartUrl = null;
   conversation.querySelectorAll('.message').forEach(el => el.remove());
+  pruneBindings();
   $('#welcome').hidden = false; $('#error').hidden = true; $('#scroll-latest').hidden = true;
   $('#selection-count').textContent = '0'; $('#query').value = ''; updateInput();
-  conversation.scrollTop = 0; $('#query').focus(); announce('Начат новый диалог.');
+  conversation.scrollTop = 0; $('#query').focus(); announce('chat.newAnnouncement');
 });
 fetch('/health', { signal: AbortSignal.timeout(5000) })
   .then(response => { if (!lastResponseId) connection(response.ok); })
   .catch(() => { if (!lastResponseId) connection(false); });
+const updateViewport = observeViewport();
+$('#language').value = getLanguage();
+$('#language').addEventListener('change', event => setLanguage(event.target.value));
+onLanguageChange(() => {
+  $('#language').value = getLanguage();
+  $('#confirm-items').querySelectorAll('input').forEach((input, index) => validateQuantity(input, confirmation[index]));
+  updateInput();
+  updateViewport();
+  announce('language.changed');
+});
+applyTranslations();
+bind($('#send-label'), () => t(busy ? 'chat.waiting' : 'chat.send'));
 updateInput();

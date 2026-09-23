@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <meta name="theme-color" content="#164b3e">
-  <meta name="description" content="AI-консультант EKT: поиск электротехники, характеристики, наличие и подбор аналогов по каталогу магазина.">
-  <title>AI-консультант — EKT Электрокомплект</title>
+  <meta name="description" content="" data-i18n-content="document.description">
+  <title data-i18n="document.title"></title>
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#query">Перейти к вопросу</a>
+  <a class="skip-link" href="#query" data-i18n="chat.skip"></a>
   <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
@@ -28,48 +28,49 @@
   </svg>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="EKT Электрокомплект — главная"><span class="brand-mark">ekt<span>.</span></span><span class="brand-name">ЭЛЕКТРОКОМПЛЕКТ<small>Электротехника для ваших задач</small></span></a>
-      <div class="header-actions"><span class="service-label">Помогаем выбрать с уверенностью</span><button id="selection-open" class="button button-secondary selection-trigger" type="button"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg><span>Ваш выбор</span><span id="selection-count" class="count">0</span></button></div>
+      <a class="brand" href="/" aria-label="" data-i18n-aria="brand.home"><span class="brand-mark">ekt<span>.</span></span><span class="brand-name"><span data-i18n="brand.name"></span><small data-i18n="brand.tagline"></small></span></a>
+      <div class="header-actions"><span class="service-label" data-i18n="brand.service"></span><label class="language-control"><span class="sr-only" data-i18n="language.label"></span><select id="language" aria-label="" data-i18n-aria="language.label"><option value="ru" lang="ru">RU</option><option value="kz" lang="kk">ҚАЗ</option><option value="en" lang="en">EN</option></select></label><button id="selection-open" data-i18n-aria="selection.title" data-i18n-title="selection.title" class="button button-secondary selection-trigger" type="button"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg><span class="selection-label" data-i18n="selection.title"></span><span id="selection-count" class="count">0</span></button></div>
     </div>
   </header>
   <main class="page">
-    <div class="page-heading"><div><div class="breadcrumb">EKT <span>/</span> Помощь с выбором</div><h1>AI-консультант EKT</h1><p>Найдите товар, уточните характеристики и наличие или подберите аналог.</p></div><span class="catalog-label"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>По данным каталога EKT</span></div>
+    <div class="page-heading"><div><div class="breadcrumb">EKT <span>/</span><span data-i18n="assistant.breadcrumb"></span></div><h1 data-i18n="assistant.title"></h1><p data-i18n="assistant.description"></p></div><span class="catalog-label"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg><span data-i18n="assistant.catalog"></span></span></div>
     <div class="assistant-layout">
-      <section class="workspace" aria-label="Чат с AI-консультантом магазина EKT">
-        <header class="chat-header"><div class="assistant-avatar" aria-hidden="true"><svg class="icon"><use href="#i-chat"/></svg></div><div class="chat-identity"><h2>Консультант магазина</h2><p id="connection" role="status"><span class="status-dot"></span><span id="connection-text">Проверяем подключение</span></p></div><button id="reset" class="button button-quiet" type="button" aria-label="Новый диалог"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Новый диалог</span></button></header>
+      <section class="workspace" aria-label="" data-i18n-aria="assistant.chatLabel">
+        <header class="chat-header"><div class="assistant-avatar" aria-hidden="true"><svg class="icon"><use href="#i-chat"/></svg></div><div class="chat-identity"><h2 data-i18n="assistant.name"></h2><p id="connection" role="status"><span class="status-dot"></span><span id="connection-text" data-i18n="connection.checking"></span></p></div><button id="reset" class="button button-quiet" type="button" aria-label="" data-i18n-aria="chat.new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-i18n="chat.new"></span></button></header>
         <div class="conversation-wrap">
-          <div id="conversation" class="conversation" role="log" aria-label="Сообщения" aria-live="polite" aria-relevant="additions">
+          <div id="conversation" class="conversation" role="log" aria-label="" data-i18n-aria="chat.messages" aria-live="polite" aria-relevant="additions">
             <section id="welcome" class="welcome" aria-labelledby="welcome-title">
               <div class="welcome-symbol" aria-hidden="true"><svg class="icon"><use href="#i-search"/></svg></div>
-              <span class="eyebrow">ВАШ ПОМОЩНИК В КАТАЛОГЕ</span><h2 id="welcome-title">Что нужно для вашей задачи?</h2>
-              <p>Напишите название, артикул или опишите задачу.<br class="desktop-break"> Я помогу разобраться в параметрах и найти подходящие товары.</p>
-              <div class="suggestions" aria-label="Примеры вопросов">
-                <button type="button" data-query="Найти автомат на 16А. Какие варианты есть в каталоге и какие параметры нужно уточнить?"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span><b>Найти автомат на 16А</b><small>Подбор по характеристикам</small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
-                <button type="button" data-query="Хочу проверить наличие товара. Какие данные или артикул нужно указать?"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg><span><b>Проверить наличие товара</b><small>Цена и доступный остаток</small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
-                <button type="button" data-query="Помоги подобрать аналог. Какие характеристики и название исходного товара нужны для сравнения?"><svg class="icon" aria-hidden="true"><use href="#i-swap"/></svg><span><b>Подобрать аналог</b><small>Сравнение подходящих вариантов</small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
-                <button type="button" data-query="Какие условия доставки EKT доступны в ваших данных? Если информации нет, сообщи об этом без предположений."><svg class="icon" aria-hidden="true"><use href="#i-truck"/></svg><span><b>Условия доставки</b><small>Уточнить доступную информацию</small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+              <span class="eyebrow" data-i18n="assistant.eyebrow"></span><h2 id="welcome-title" data-i18n="assistant.welcome"></h2>
+              <p data-i18n="assistant.welcomeDescription"></p>
+              <div class="suggestions" aria-label="" data-i18n-aria="chat.examples">
+                <button type="button" data-query="prompts.search.query"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span><b data-i18n="prompts.search.label"></b><small data-i18n="prompts.search.description"></small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+                <button type="button" data-query="prompts.stock.query"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg><span><b data-i18n="prompts.stock.label"></b><small data-i18n="prompts.stock.description"></small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+                <button type="button" data-query="prompts.analogue.query"><svg class="icon" aria-hidden="true"><use href="#i-swap"/></svg><span><b data-i18n="products.findAnalogue"></b><small data-i18n="prompts.analogue.description"></small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+                <button type="button" data-query="prompts.delivery.query"><svg class="icon" aria-hidden="true"><use href="#i-truck"/></svg><span><b data-i18n="prompts.delivery.label"></b><small data-i18n="prompts.delivery.description"></small></span><svg class="icon prompt-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
               </div>
-              <p class="welcome-note"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Выбор товара — только с вашим подтверждением</p>
+              <p class="welcome-note"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="assistant.confirmationNote"></span></p>
             </section>
           </div>
-          <button id="scroll-latest" class="button latest-button" type="button" hidden>К последнему ответу ↓</button>
+          <button id="scroll-latest" class="button latest-button" type="button" hidden data-i18n="chat.latest"></button>
         </div>
         <div class="composer-area">
-          <div id="error" class="error-banner" role="alert" hidden><div><strong id="error-title">Не удалось получить ответ</strong><p id="error-message"></p></div><button id="retry" class="button button-secondary" type="button">Повторить</button><button id="error-close" class="icon-button" type="button" aria-label="Скрыть ошибку"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
-          <form id="chat-form" class="composer"><label for="query">Спросите о товаре или опишите задачу</label><textarea id="query" rows="2" maxlength="2000" required aria-describedby="input-help" placeholder="Например: нужен кабель ВВГнг 3×2,5, 50 метров"></textarea><div class="composer-bottom"><span id="character-count">Можно указать название или артикул</span><button id="send" class="button button-primary" type="submit" disabled><span id="send-label">Отправить</span><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button></div></form>
-          <div class="composer-help" id="input-help"><span class="keyboard-help">Enter — отправить · Shift + Enter — новая строка</span><span>Ответы AI стоит проверять перед покупкой</span></div>
+          <div id="error" class="error-banner" role="alert" hidden><div><strong id="error-title" data-i18n="errors.answerTitle"></strong><p id="error-message" tabindex="0"></p></div><button id="retry" class="button button-secondary" type="button" data-i18n="common.retry"></button><button id="error-close" class="icon-button" type="button" aria-label="" data-i18n-aria="errors.dismiss"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+          <form id="chat-form" class="composer"><label for="query" data-i18n="chat.label"></label><textarea id="query" rows="2" maxlength="2000" required aria-describedby="input-help" placeholder="" data-i18n-placeholder="chat.placeholder"></textarea><div class="composer-bottom"><span id="character-count" data-i18n="chat.inputHint"></span><button id="send" class="button button-primary" type="submit" disabled><span id="send-label" data-i18n="chat.send"></span><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button></div></form>
+          <div class="composer-help" id="input-help"><span class="keyboard-help" data-i18n="chat.keyboardHelp"></span><span data-i18n="chat.verifyNote"></span></div>
+          <p class="data-language-note" data-i18n="language.dataNote"></p>
         </div>
       </section>
-      <aside class="help-panel" aria-label="Возможности консультанта">
-        <div class="help-section"><span class="eyebrow">ОТ ЗАПРОСА К ВЫБОРУ</span><h2>Разберёмся вместе</h2><ol class="journey"><li><span>1</span><div><h3>Расскажите, что ищете</h3><p>Название, артикул или задача — начните с того, что знаете.</p></div></li><li><span>2</span><div><h3>Сравните товары</h3><p>Характеристики, наличие и возможные аналоги в одном диалоге.</p></div></li><li><span>3</span><div><h3>Подтвердите выбор</h3><p>Проверьте товар и количество перед действием с корзиной.</p></div></li></ol></div>
-        <div class="help-tip"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><h3>Чем точнее запрос,<br>тем полезнее ответ</h3><p>Для автомата укажите номинал, число полюсов и характеристику срабатывания. Если не знаете — ассистент уточнит.</p><button id="help-example" class="text-link" type="button">Вставить пример запроса <span aria-hidden="true">↗</span></button></div>
-        <div class="cart-availability"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg><p><strong>О корзине</strong>Сейчас можно подтвердить выбранные позиции. Добавление в корзину EKT пока недоступно.</p></div>
+      <aside class="help-panel" aria-label="" data-i18n-aria="help.label">
+        <div class="help-section"><span class="eyebrow" data-i18n="help.eyebrow"></span><h2 data-i18n="help.title"></h2><ol class="journey"><li><span>1</span><div><h3 data-i18n="help.searchTitle"></h3><p data-i18n="help.searchDescription"></p></div></li><li><span>2</span><div><h3 data-i18n="help.compareTitle"></h3><p data-i18n="help.compareDescription"></p></div></li><li><span>3</span><div><h3 data-i18n="help.confirmTitle"></h3><p data-i18n="help.confirmDescription"></p></div></li></ol></div>
+        <div class="help-tip"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><h3 data-i18n="help.tipTitle"></h3><p data-i18n="help.tipDescription"></p><button id="help-example" class="text-link" type="button"><span data-i18n="help.example"></span><span aria-hidden="true">↗</span></button></div>
+        <div class="cart-availability"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg><p><strong data-i18n="cart.about"></strong><span data-i18n="cart.availabilityNote"></span></p></div>
       </aside>
     </div>
   </main>
-  <dialog id="product-dialog" class="modal" aria-labelledby="product-dialog-title"><div class="modal-header"><h2 id="product-dialog-title">О товаре</h2><button class="icon-button" type="button" data-close="product-dialog" aria-label="Закрыть информацию о товаре"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="product-detail" class="modal-body"></div></dialog>
-  <dialog id="confirm-dialog" class="modal" aria-labelledby="confirm-title" aria-describedby="confirm-description"><form id="confirm-form"><div class="modal-header"><div><span class="eyebrow">ПРОВЕРЬТЕ ПЕРЕД ПОДТВЕРЖДЕНИЕМ</span><h2 id="confirm-title">Ваш выбор для корзины</h2></div><button class="icon-button" type="button" data-close="confirm-dialog" aria-label="Закрыть подтверждение"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="modal-body"><p id="confirm-description">Проверьте позиции и количество. После подтверждения повторно проверим наличие.</p><div id="confirm-items"></div><p id="confirm-total" class="confirm-total"></p><div class="notice"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p>Сейчас подтверждается только выбор. Товары не будут добавлены в корзину EKT: сервис добавления пока недоступен.</p></div></div><div class="modal-footer"><button type="button" class="button button-secondary" data-close="confirm-dialog">Отмена</button><button id="confirm-submit" type="submit" class="button button-primary">Подтвердить выбор</button></div></form></dialog>
-  <dialog id="selection-dialog" class="modal" aria-labelledby="selection-title"><div class="modal-header"><div><span class="eyebrow">В ЭТОМ ДИАЛОГЕ</span><h2 id="selection-title">Ваш выбор</h2></div><button class="icon-button" type="button" data-close="selection-dialog" aria-label="Закрыть выбранные товары"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="selection-content" class="modal-body"></div></dialog>
+  <dialog id="product-dialog" class="modal" aria-labelledby="product-dialog-title"><div class="modal-header"><h2 id="product-dialog-title" data-i18n="products.detailsTitle"></h2><button class="icon-button" type="button" data-close="product-dialog" aria-label="" data-i18n-aria="products.closeDetails"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="product-detail" class="modal-body"></div></dialog>
+  <dialog id="confirm-dialog" class="modal" aria-labelledby="confirm-title" aria-describedby="confirm-description"><form id="confirm-form"><div class="modal-header"><div><span class="eyebrow" data-i18n="confirmation.eyebrow"></span><h2 id="confirm-title" data-i18n="confirmation.title"></h2></div><button class="icon-button" type="button" data-close="confirm-dialog" aria-label="" data-i18n-aria="confirmation.close"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="modal-body"><p id="confirm-description" data-i18n="confirmation.description"></p><div id="confirm-items"></div><p id="confirm-total" class="confirm-total"></p><div class="notice"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p data-i18n="confirmation.notice"></p></div></div><div class="modal-footer"><button type="button" class="button button-secondary" data-close="confirm-dialog" data-i18n="common.cancel"></button><button id="confirm-submit" type="submit" class="button button-primary" data-i18n="confirmation.submit"></button></div></form></dialog>
+  <dialog id="selection-dialog" class="modal" aria-labelledby="selection-title"><div class="modal-header"><div><span class="eyebrow" data-i18n="selection.eyebrow"></span><h2 id="selection-title" data-i18n="selection.title"></h2></div><button class="icon-button" type="button" data-close="selection-dialog" aria-label="" data-i18n-aria="selection.close"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="selection-content" class="modal-body"></div></dialog>
   <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
 </body>
 </html>
