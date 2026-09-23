@@ -128,7 +128,7 @@ function stockBadge(product) {
   const stock = product.stock;
   if (stock == null || !Number.isFinite(stock)) return lnode('span', 'products.stockUnknown', 'badge badge-unknown');
   if (stock <= 0) return lnode('span', 'products.unavailable', 'badge badge-unavailable');
-  return lnode('span', 'products.available', 'badge badge-stock', () => ({ stock, unit: product.unit || t('products.unitUnknown') }));
+  return lnode('span', 'products.available', 'badge badge-stock', () => ({ stock, unit: product.unit || '' }));
 }
 function certificateInfo(product, showMissing = false) {
   const cert = certificate(product);
@@ -209,13 +209,15 @@ function openConfirmation(items) {
     const input = node('input');
     input.id = label.htmlFor; input.type = 'number'; input.min = '0'; input.step = 'any'; input.max = String(Math.min(product.stock, 1_000_000)); input.required = true;
     input.value = String(item.quantity); input.inputMode = 'decimal';
-    bind(input, () => t('confirmation.quantityLabel', { name: product.name, unit: product.unit }), 'aria-label');
+    bind(input, () => t(product.unit ? 'confirmation.quantityLabel' : 'confirmation.quantityLabelWithoutUnit', { name: product.name, unit: product.unit || '' }), 'aria-label');
     input.addEventListener('input', () => {
       item.quantity = input.valueAsNumber;
       validateQuantity(input, item);
       updateTotal();
     });
-    control.append(label, input, node('span', product.unit)); row.append(control); container.append(row);
+    control.append(label, input);
+    if (product.unit) control.append(node('span', product.unit));
+    row.append(control); container.append(row);
   });
   updateTotal();
   $('#confirm-dialog').showModal();
@@ -232,7 +234,7 @@ function updateTotal() {
 
 function validateQuantity(input, item) {
   const stock = Math.min(item.product.stock, 1_000_000);
-  input.setCustomValidity(!Number.isFinite(item.quantity) || item.quantity <= 0 ? t('confirmation.quantityInvalid') : item.quantity > stock ? t('confirmation.quantityMaximum', { stock, unit: item.product.unit }) : '');
+  input.setCustomValidity(!Number.isFinite(item.quantity) || item.quantity <= 0 ? t('confirmation.quantityInvalid') : item.quantity > stock ? t('confirmation.quantityMaximum', { stock, unit: item.product.unit || '' }) : '');
 }
 
 function renderProposal(parent, data, responseId) {
@@ -242,7 +244,7 @@ function renderProposal(parent, data, responseId) {
   const panel = node('div', null, 'state-panel confirmation-proposal');
   panel.append(lnode('h3', 'confirmation.pendingTitle'), lnode('p', 'confirmation.pendingDescription'));
   const list = node('ul', null, 'proposal-list');
-  for (const item of items) list.append(node('li', `${item.product.name} — ${item.quantity} ${item.product.unit}`));
+  for (const item of items) list.append(node('li', `${item.product.name} — ${item.quantity} ${item.product.unit || ''}`.trim()));
   panel.append(list, button('confirmation.review', () => { if (responseId === lastResponseId) openConfirmation(items); }, 'button-primary', true));
   panel.append(button('common.cancel', () => clearProposal('confirmation.cancelled')));
   parent.append(panel); pendingProposal = panel;
@@ -277,7 +279,8 @@ function openSelection() {
     container.append(lnode('p', 'selection.description'));
     for (const { product, quantity, added } of selected.values()) {
       const entry = node('section', null, 'selection-entry');
-      entry.append(node('h3', product.name), dynamicNode('p', () => `${quantity} ${product.unit} · ${productCode(product)}`, 'muted-note'));
+      const quantityText = `${quantity} ${product.unit || ''}`.trim();
+      entry.append(node('h3', product.name), dynamicNode('p', () => `${quantityText} · ${productCode(product)}`, 'muted-note'));
       entry.append(lnode('span', added ? 'cart.added' : 'selection.confirmedBadge', 'badge badge-stock')); container.append(entry);
     }
   }
@@ -394,7 +397,7 @@ $('#confirm-form').addEventListener('submit', event => {
   if (busy || $('#confirm-submit').disabled || !$('#confirm-form').reportValidity()) return;
   const items = confirmation.map(item => ({ ...item }));
   $('#confirm-dialog').close();
-  const description = items.map(item => t('confirmation.item', { name: item.product.name.slice(0, 160), id: item.product.id, count: item.quantity, unit: item.product.unit })).join('; ');
+  const description = items.map(item => t('confirmation.item', { name: item.product.name.slice(0, 160), id: item.product.id, count: item.quantity, unit: item.product.unit || '' }).trim()).join('; ');
   send(t('confirmation.query', { items: description }).slice(0, 2000), items);
 });
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(`#${el.dataset.close}`).close()));

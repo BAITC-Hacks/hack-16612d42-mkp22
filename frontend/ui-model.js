@@ -46,7 +46,7 @@ export function certificate(product) {
 }
 
 export function selectable(product) {
-  return Number.isFinite(product.stock) && product.stock > 0 && typeof product.unit === 'string' && Boolean(product.unit.trim());
+  return Number.isFinite(product.stock) && product.stock > 0;
 }
 
 export function money(price, currency) {

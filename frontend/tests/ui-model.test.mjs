@@ -23,8 +23,10 @@ test('internal IDs are not presented as articles; certificate must exist in cata
   assert.equal(certificate({ characteristics: { Сертификат: { url: 'https://ekt.kz/cert.pdf' } } }).url, 'https://ekt.kz/cert.pdf');
 });
 
-test('selection requires known positive stock and an explicit unit; fractional stock is valid', () => {
-  for (const product of [{ stock: 0, unit: 'шт.' }, { stock: null, unit: 'шт.' }, { stock: 4, unit: null }, { stock: '4', unit: 'шт.' }]) assert.equal(selectable(product), false);
+test('selection requires known positive stock; missing units and fractional stock are valid', () => {
+  for (const stock of [0, -1, null, undefined, '365', NaN, Infinity]) assert.equal(selectable({ stock, unit: 'шт.' }), false);
+  for (const unit of [null, undefined, '', 'шт.']) assert.equal(selectable({ stock: 365, unit }), true);
+  assert.equal(selectable({ stock: 365 }), true);
   assert.equal(selectable({ stock: 0.5, unit: 'м' }), true);
   assert.match(money(0, 'KZT'), /^0 /);
   assert.equal(money(null, 'KZT'), 'Цена не указана');
