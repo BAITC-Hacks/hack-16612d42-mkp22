@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#174d40">
+  <title>EKT — AI-консультант</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Электрокомплект, главная"><span class="brand-mark">e<span>k</span>t.</span><span class="brand-caption">ЭЛЕКТРОКОМПЛЕКТ<br><small>Всё начинается с подключения</small></span></a>
+    <div class="header-right"><span class="pill">HackAlem AI · MVP</span><span class="avatar" title="Frontend: Moveath">M</span></div>
+  </header>
+  <main class="layout">
+    <aside class="sidebar">
+      <span class="eyebrow">ВАШ ПОМОЩНИК В КАТАЛОГЕ</span>
+      <h1>Нужный товар.<br>Без долгих<br><em>поисков.</em></h1>
+      <p class="intro">Расскажите о задаче — консультант поможет подобрать электротехнику по характеристикам и наличию.</p>
+      <div class="steps"><div><b>01</b><span>Опишите, что нужно<small>Товар, параметры или задача</small></span></div><div><b>02</b><span>Сравните варианты<small>Характеристики, цена и аналоги</small></span></div><div><b>03</b><span>Подтвердите выбор<small>Решение всегда остаётся за вами</small></span></div></div>
+      <div class="trust"><span>✓</span><div>Только данные каталога<p>Если информации недостаточно, помощник задаст уточняющий вопрос.</p></div></div>
+      <footer>Трек 10 / Торговля <span>UI by Moveath</span></footer>
+    </aside>
+    <section class="workspace" aria-label="Консультант">
+      <div class="chat-header"><div class="bot-icon">✦</div><div><h2>EKT Ассистент</h2><p id="connection">Проверяем подключение…</p></div><button id="reset" class="text-button" type="button">Новый диалог ↗</button></div>
+      <div id="conversation" class="conversation" role="log" aria-live="polite" aria-relevant="additions">
+        <div id="welcome" class="welcome"><span class="welcome-icon">✦</span><span class="eyebrow">ДАВАЙТЕ ПОДБЕРЁМ РЕШЕНИЕ</span><h2>Чем помочь вашему проекту?</h2><p>Спросите о товаре, уточните наличие<br>или найдите подходящий аналог.</p><div class="suggestions"><button data-query="Помоги подобрать автоматический выключатель для квартиры. Какие параметры нужно уточнить?"><span>↗</span><b>Подобрать оборудование</b><small>Например, автомат для квартиры</small></button><button data-query="Ищу кабель ВВГнг 3×2,5. Есть ли он в наличии и какая цена?"><span>⌕</span><b>Проверить наличие</b><small>Найти кабель ВВГнг 3×2,5</small></button><button data-query="Помоги найти аналог автоматического выключателя. Какие характеристики тебе нужны?"><span>⇄</span><b>Найти аналог</b><small>Сравнить подходящие варианты</small></button></div></div>
+      </div>
+      <div id="error" class="error" role="alert" hidden></div>
+      <form id="chat-form" class="composer"><label class="sr-only" for="query">Ваш вопрос</label><textarea id="query" rows="2" maxlength="2000" required placeholder="Например: нужен кабель для проводки в квартире…"></textarea><button id="send" class="send" type="submit" aria-label="Отправить сообщение">↑</button></form>
+      <p class="composer-note">Enter — отправить · Shift + Enter — новая строка <span>✧ Вы подтверждаете каждое действие</span></p>
+    </section>
+  </main>
+</body>
+</html>
