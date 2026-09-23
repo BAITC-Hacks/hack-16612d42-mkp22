@@ -20,6 +20,7 @@ import openai
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 load_dotenv()
@@ -652,10 +653,10 @@ CATALOG RULES (mandatory):
 - When the user asks about availability, price or quantity, explicitly state the exact catalog value in the answer if it is known.
 - If stock is positive, say that it is in stock and state the exact quantity. State the unit only when unit is not null.
 - stores contains stock by warehouse/city when EKT provides it. If the user asks about a city, use the matching store quantity and do not confuse it with total stock.
-- If stock is 0, clearly say it is out of stock.
-- If stock is null, say that the exact stock is not available from the catalog data; do not claim it is available.
-- If price is known, state the exact price and currency. If price is null, say the price is not available from the catalog data.
-- Data is a snapshot at catalog_checked_at, not a reservation.
+- Do not include raw product URLs in the conversational answer.
+- Product links are rendered separately by the frontend from the product.url field.
+- Keep the answer concise and customer-friendly: usually 2-5 sentences.
+- When a user asks about a city, state the stock for that city/warehouse, not the total stock, unless the total is also useful.
 
 SEARCH / ANALOGUES:
 - Select at most 6 relevant products.
@@ -984,3 +985,5 @@ def chat(body: ChatRequest, request: Request) -> ChatResponse:
         # Не возвращаем ключи, upstream response body или traceback клиенту.
         log.error("Unexpected backend error: %s", type(exc).__name__)
         fail(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.")
+
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
