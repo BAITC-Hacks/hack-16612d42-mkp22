@@ -13,6 +13,9 @@ let pendingProposal = null;
 let confirmation = [];
 let retryRequest = null;
 let lastResponseId = 0;
+let activeRequest = null;
+let connectionCheck = 0;
+let connectionTimer = null;
 
 function node(tag, text, className) {
   const el = document.createElement(tag);
@@ -47,9 +50,24 @@ function button(key, onClick, style = 'button-secondary', action = false) {
 }
 
 function announce(key) { bind($('#announcement'), () => t(key)); }
-function connection(online) {
+function connection(online, catalog = null) {
   $('#connection').dataset.state = online ? 'online' : 'offline';
-  bind($('#connection-text'), () => t(online ? 'connection.online' : 'connection.offline'));
+  const key = !online ? 'connection.offline' : catalog?.status === 'loading' ? 'connection.catalogLoading'
+    : catalog?.status === 'error' ? 'connection.catalogError' : 'connection.online';
+  bind($('#connection-text'), () => t(key, { count: catalog?.products_loaded ?? 0 }));
+}
+async function refreshConnection() {
+  clearTimeout(connectionTimer);
+  const check = ++connectionCheck;
+  try {
+    const response = await fetch('/health', { signal: AbortSignal.timeout(5000), cache: 'no-store' });
+    const data = await response.json().catch(() => null);
+    if (check !== connectionCheck) return;
+    connection(response.ok, data?.catalog);
+    if (response.ok && data?.catalog?.status === 'loading') connectionTimer = setTimeout(refreshConnection, 5000);
+  } catch {
+    if (check === connectionCheck) connection(false);
+  }
 }
 function nearBottom() { return conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 90; }
 function scrollLatest() { conversation.scrollTop = conversation.scrollHeight; $('#scroll-latest').hidden = true; }
@@ -62,6 +80,8 @@ function updateInput() {
 }
 function setBusy(value) {
   busy = value;
+  $('#send').hidden = value;
+  $('#stop-request').hidden = !value;
   $('#reset').disabled = value;
   $('#retry').disabled = value;
   document.querySelectorAll('[data-query], [data-request-action]').forEach(el => { el.disabled = value; });
@@ -341,15 +361,22 @@ async function send(query, items = [], retry = false) {
   const typingTimer = setTimeout(() => { if (!items.length) { loadingKey = 'chat.typing'; status.textContent = t(loadingKey); } }, 1600);
   const slowTimer = setTimeout(() => { loadingKey = 'chat.slow'; status.textContent = t(loadingKey); }, 18000);
   const confirmCart = items.map(item => ({ product_id: item.product.id, quantity: item.quantity }));
+  const request = { controller: new AbortController(), timedOut: false, stopped: false };
+  activeRequest = request;
+  const deadline = setTimeout(() => { request.timedOut = true; request.controller.abort(); }, 75_000);
   try {
     const response = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify(createChatPayload({ query, history: previousHistory, confirmCart, language: getLanguage() })),
-      signal: AbortSignal.timeout(125_000),
+      signal: request.controller.signal,
     });
     let data;
-    try { data = await response.json(); } catch { throw Object.assign(new Error('Invalid JSON'), { translationKey: 'errors.invalidResponse' }); }
+    try { data = await response.json(); } catch (error) {
+      if (request.controller.signal.aborted) throw error;
+      throw Object.assign(new Error('Invalid JSON'), { translationKey: 'errors.invalidResponse' });
+    }
+    request.controller.signal.throwIfAborted();
     if (!response.ok) {
       const error = new Error('Chat request failed');
       error.status = response.status;
@@ -380,7 +407,7 @@ async function send(query, items = [], retry = false) {
     reply.append(meta);
     history.push({ role: 'user', content: query }, { role: 'assistant', content: data.answer.slice(0, 4000) });
     history.splice(0, Math.max(0, history.length - 12));
-    connection(true);
+    ++connectionCheck; clearTimeout(connectionTimer); connection(true);
     if (follow) {
       // Start at the answer, rather than jumping past its product cards.
       conversation.scrollTop = Math.max(0, reply.offsetTop - conversation.offsetTop - 16);
@@ -389,16 +416,18 @@ async function send(query, items = [], retry = false) {
   } catch (error) {
     loading.remove();
     bind($('#error-title'), () => t(items.length ? 'errors.confirmTitle' : 'errors.answerTitle'));
-    const timeout = error.name === 'TimeoutError' || error.name === 'AbortError';
-    const key = timeout ? 'errors.timeout' : error.translationKey || (error instanceof TypeError ? 'errors.network' : 'errors.generic');
-    bind($('#error-message'), () => `${t(key)}${items.length ? ` ${t('errors.confirmFailureNote')}` : ''}`);
+    const timeout = request.timedOut || error.name === 'TimeoutError';
+    const key = request.stopped ? 'chat.stopped' : timeout ? 'errors.timeout' : error.translationKey || (error instanceof TypeError ? 'errors.network' : 'errors.generic');
+    bind($('#error-message'), () => items.length ? `${t('errors.confirmFailureNote')} ${t(key)}` : t(key));
     $('#error').hidden = false;
     retryRequest = { query, items, retry: true };
     bind($('#retry'), () => t(items.length ? 'confirmation.retry' : 'common.retry'));
-    if (error.status >= 500 || error instanceof TypeError || timeout) connection(false);
+    // An upstream/catalog timeout does not mean that our server is offline.
+    refreshConnection();
     announce('errors.announcement');
   } finally {
-    clearTimeout(typingTimer); clearTimeout(slowTimer);
+    clearTimeout(typingTimer); clearTimeout(slowTimer); clearTimeout(deadline);
+    if (activeRequest === request) activeRequest = null;
     pruneBindings();
     setBusy(false);
   }
@@ -406,6 +435,11 @@ async function send(query, items = [], retry = false) {
 
 function errorKey(code, status) {
   if (typeof code !== 'string') code = '';
+  if (code === 'CATALOG_LOADING') return 'errors.catalogLoading';
+  if (code === 'CATALOG_LOAD_FAILED') return 'errors.catalogLoadFailed';
+  if (code === 'OPENAI_AUTH' || code === 'OPENAI_NOT_CONFIGURED') return 'errors.openaiAuth';
+  if (code === 'OPENAI_LIMIT') return 'errors.openaiLimit';
+  if (code === 'EKT_AUTH') return 'errors.ektAuth';
   if (code === 'CART_UNAVAILABLE') return 'errors.cartUnavailable';
   if (code === 'CART_INVALID') return 'errors.cartInvalid';
   if (code === 'AI_REFUSAL') return 'errors.refusal';
@@ -417,6 +451,11 @@ function errorKey(code, status) {
 }
 
 $('#chat-form').addEventListener('submit', event => { event.preventDefault(); send($('#query').value); });
+$('#stop-request').addEventListener('click', () => {
+  if (!activeRequest) return;
+  activeRequest.stopped = true;
+  activeRequest.controller.abort();
+});
 $('#query').addEventListener('input', updateInput);
 $('#query').addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send($('#query').value); }
@@ -458,9 +497,7 @@ $('#reset').addEventListener('click', () => {
   $('#query').value = ''; updateInput();
   conversation.scrollTop = 0; $('#query').focus(); announce('chat.newAnnouncement');
 });
-fetch('/health', { signal: AbortSignal.timeout(5000) })
-  .then(response => { if (!lastResponseId) connection(response.ok); })
-  .catch(() => { if (!lastResponseId) connection(false); });
+refreshConnection();
 const updateViewport = observeViewport();
 $('#language').value = getLanguage();
 $('#language').addEventListener('change', event => setLanguage(event.target.value));

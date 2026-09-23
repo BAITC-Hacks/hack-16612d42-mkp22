@@ -22,7 +22,7 @@ const files = new Map([
 export function createFrontendServer({
   backend = process.env.BACKEND_URL || 'http://127.0.0.1:8000',
   staticRoot = new URL('./', import.meta.url),
-  timeoutMs = 120_000,
+  timeoutMs = 70_000,
   maxBodyBytes = 100_000,
 } = {}) {
   return http.createServer(async (req, res) => {
@@ -38,6 +38,7 @@ export function createFrontendServer({
     const apiRequest = (path === '/api/chat' && req.method === 'POST')
       || (path === '/api/cart' && req.method === 'GET');
     if (apiRequest || (path === '/health' && req.method === 'GET')) {
+      let upstreamTimeout;
       try {
         const chunks = [];
         let bodyBytes = 0;
@@ -56,12 +57,13 @@ export function createFrontendServer({
         }
         // Session cookies belong only to the configured API, never other destinations.
         if (apiRequest && req.headers.cookie) headers.Cookie = req.headers.cookie;
+        upstreamTimeout = AbortSignal.timeout(timeoutMs);
         const upstream = await fetch(new URL(path + requestUrl.search, backend), {
           method: req.method,
           headers,
           body: req.method === 'POST' ? Buffer.concat(chunks) : undefined,
           redirect: 'manual',
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: upstreamTimeout,
         });
         const responseBody = Buffer.from(await upstream.arrayBuffer());
         const responseHeaders = { 'Cache-Control': 'no-store' };
@@ -75,9 +77,14 @@ export function createFrontendServer({
         if (location) responseHeaders.Location = location;
         res.writeHead(upstream.status, responseHeaders);
         res.end(responseBody);
-      } catch {
-        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify({ detail: { code: 'FRONTEND_PROXY_UNAVAILABLE', message: 'Assistant service unavailable.' } }));
+      } catch (error) {
+        // Reading a stalled response body may throw AbortError rather than TimeoutError.
+        const timedOut = error.name === 'TimeoutError' || upstreamTimeout?.reason?.name === 'TimeoutError';
+        res.writeHead(timedOut ? 504 : 502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ detail: {
+          code: timedOut ? 'FRONTEND_PROXY_TIMEOUT' : 'FRONTEND_PROXY_UNAVAILABLE',
+          message: timedOut ? 'Assistant response timed out.' : 'Assistant service unavailable.',
+        } }));
       }
       return;
     }

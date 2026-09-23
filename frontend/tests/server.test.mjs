@@ -143,8 +143,27 @@ test('proxy keeps body size limits and returns a safe error when the upstream ti
   await oversized.text();
   assert.equal(requests, 0);
   const unavailable = await fetch(`${frontend}/api/cart`, { headers: { Cookie: 'ekt_session=private-fixture' } });
-  assert.equal(unavailable.status, 502);
+  assert.equal(unavailable.status, 504);
   const detail = (await unavailable.json()).detail;
-  assert.equal(detail.code, 'FRONTEND_PROXY_UNAVAILABLE');
+  assert.equal(detail.code, 'FRONTEND_PROXY_TIMEOUT');
   assert.equal(JSON.stringify(detail).includes('private-fixture'), false);
+});
+
+test('proxy identifies timeout while reading an unfinished upstream response body', async t => {
+  const backend = await listen(t, http.createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write('{"items":');
+  }));
+  const frontend = await listen(t, createFrontendServer({ backend, timeoutMs: 30 }));
+  const response = await fetch(`${frontend}/api/cart`);
+  assert.equal(response.status, 504);
+  assert.equal((await response.json()).detail.code, 'FRONTEND_PROXY_TIMEOUT');
+});
+
+test('proxy keeps connection failures distinct from slow responses', async t => {
+  const backend = await listen(t, http.createServer((req) => req.socket.destroy()));
+  const frontend = await listen(t, createFrontendServer({ backend }));
+  const response = await fetch(`${frontend}/api/cart`);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).detail.code, 'FRONTEND_PROXY_UNAVAILABLE');
 });
