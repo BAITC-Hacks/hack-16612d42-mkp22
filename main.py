@@ -27,7 +27,7 @@ load_dotenv()
 log = logging.getLogger("ekt_backend")
 PRODUCTS_URL = "https://ekt.kz/api/products"
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-CACHE_TTL = 600
+CACHE_TTL = 86400
 MAX_CANDIDATES = 40
 DETAIL_CANDIDATES = 20
 DETAIL_CACHE_TTL = 30
