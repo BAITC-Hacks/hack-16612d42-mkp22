@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from threading import Lock
-from time import monotonic
+from time import monotonic, sleep
 from typing import Any, Literal, NoReturn
 from urllib.parse import urljoin, urlsplit
 
@@ -336,22 +336,40 @@ class Catalog:
                 # большого каталога может занимать много минут.
                 requested_per_page = max(1, min(int(os.getenv("EKT_PER_PAGE", "500")), 500))
                 max_pages = max(1, min(int(os.getenv("EKT_MAX_PAGES", "5000")), 5000))
-                workers = max(1, min(int(os.getenv("EKT_CATALOG_WORKERS", "12")), 24))
+                workers = max(1, min(int(os.getenv("EKT_CATALOG_WORKERS", "4")), 8))
                 seen_pages: set[tuple[str, str, int]] = set()
 
                 def fetch_page(page_no: int):
-                    response = self.http.get(
-                        PRODUCTS_URL,
-                        params={"page": page_no, "per_page": requested_per_page},
-                    )
-                    # Некоторые API возвращают 404 для страницы после конца каталога.
-                    if response.status_code == 404:
-                        return page_no, [], requested_per_page, 0
-                    response.raise_for_status()
-                    rows, actual_page, actual_per_page, page_count = unpack_ekt_page(response.json())
-                    if actual_page != page_no:
-                        raise ValueError("EKT API returned unexpected page number")
-                    return page_no, rows, actual_per_page, page_count
+                    # EKT иногда отвечает медленно при параллельной загрузке.
+                    # Повторяем временные сетевые ошибки, но не скрываем постоянный сбой.
+                    last_error: Exception | None = None
+                    for attempt in range(1, 4):
+                        try:
+                            response = self.http.get(
+                                PRODUCTS_URL,
+                                params={"page": page_no, "per_page": requested_per_page},
+                                timeout=httpx.Timeout(60.0, connect=10.0),
+                            )
+                            # Некоторые API возвращают 404 для страницы после конца каталога.
+                            if response.status_code == 404:
+                                return page_no, [], requested_per_page, 0
+                            response.raise_for_status()
+                            rows, actual_page, actual_per_page, page_count = unpack_ekt_page(response.json())
+                            if actual_page != page_no:
+                                raise ValueError("EKT API returned unexpected page number")
+                            return page_no, rows, actual_per_page, page_count
+                        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                            last_error = exc
+                            print(
+                                f"[EKT] page {page_no}: attempt {attempt}/3 failed "
+                                f"({type(exc).__name__})",
+                                flush=True,
+                            )
+                            if attempt < 3:
+                                sleep(attempt * 1.5)
+                    if last_error is not None:
+                        raise last_error
+                    raise RuntimeError("EKT page request failed")
 
                 finished = False
                 block_start = 1
@@ -711,7 +729,7 @@ async def lifespan(app: FastAPI):
 
     with httpx.Client(
         auth=httpx.BasicAuth(os.environ["EKT_USERNAME"], os.environ["EKT_PASSWORD"]),
-        timeout=httpx.Timeout(25.0, connect=7.0),
+        timeout=httpx.Timeout(60.0, connect=10.0),
         follow_redirects=False,
         headers={"Accept": "application/json", "User-Agent": "EKT-Hackathon-Assistant/1.0"},
     ) as http:
