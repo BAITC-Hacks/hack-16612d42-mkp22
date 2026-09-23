@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+if ! command -v git >/dev/null 2>&1; then
+  echo "Environment file check failed: install Git before committing." >&2
+  exit 1
+fi
+if ! command -v node >/dev/null 2>&1; then
+  echo "Environment file check failed: install Node.js before committing." >&2
+  exit 1
+fi
+repo_root=$(git rev-parse --show-toplevel) || exit 1
+cd "$repo_root"
+exec node scripts/check-env.mjs
