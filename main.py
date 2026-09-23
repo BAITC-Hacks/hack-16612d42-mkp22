@@ -517,10 +517,29 @@ def detect_language(text: str) -> str:
 STOP_WORDS = {
     "ru": {"ищу", "есть", "наличии", "наличие", "нужен", "нужна", "нужно",
            "нужны", "предложи", "подбери", "аналог", "для", "мне", "пожалуйста",
-           "хочу", "купить", "сколько", "цена", "стоит", "штук", "штуки", "шт"},
+           "хочу", "купить", "сколько", "цена", "стоит", "штук", "штуки", "шт",
+           "на", "ампер", "ампера", "амперный"},
     "en": {"need", "want", "find", "looking", "for", "have", "stock", "price",
            "please", "pieces", "piece", "pcs", "buy", "how", "much", "is", "are"},
     "kk": {"керек", "бар", "баға", "бағасы", "дана", "саны", "тауып", "бер", "үшін"},
+}
+
+# Небольшой доменный словарь только для поискового индекса.
+# Он не меняет данные товара и не влияет на финальный ответ модели.
+SEARCH_SYNONYMS = {
+    "автоматик": "автомат",
+    "автоматическ": "автомат",
+    "автоматический": "автомат",
+    "автоматическй": "автомат",
+    "автоматика": "автомат",
+    "автоматчик": "автомат",
+    "выключател": "автомат",
+    "выключатель": "автомат",
+    "однополюсн": "1p",
+    "однополюсный": "1p",
+    "однополюсник": "1p",
+    "трехполюсн": "3p",
+    "трехполюсный": "3p",
 }
 
 
@@ -529,16 +548,15 @@ def stem_token(token: str) -> str:
     token = token.strip("_-")
     if re.fullmatch(r"\d+(?:\.\d+)?(?:x\d+(?:\.\d+)?)?", token):
         return token
-    # Для русских товарных слов хватает снятия частых окончаний:
-    # катушки -> катушк, рамки -> рамк, выключатели -> выключател.
     for suffix in (
         "иями", "ями", "ами", "ого", "ему", "ому", "ыми", "ими", "ая", "яя",
         "ое", "ее", "ые", "ие", "ый", "ий", "ой", "ов", "ев", "ам", "ям",
         "ах", "ях", "ы", "и", "а", "я", "у", "ю", "е", "о",
     ):
         if token.endswith(suffix) and len(token) - len(suffix) >= 4:
-            return token[:-len(suffix)]
-    return token
+            token = token[:-len(suffix)]
+            break
+    return SEARCH_SYNONYMS.get(token, token)
 
 
 def query_terms(query: str, lang: str) -> list[str]:
@@ -558,16 +576,32 @@ def query_terms(query: str, lang: str) -> list[str]:
 
 
 def candidates(products: list[Product], body: ChatRequest) -> list[Product]:
-    """Поиск выполняется по РЕАЛЬНО загруженному каталогу до вызова OpenAI."""
+    """Локальный поиск по реальному каталогу до вызова OpenAI.
+
+    Для автоматов учитываем реальные обозначения каталога: 16А/16A/C16/B16,
+    1P/1ф и названия вида "AB", где слово "автомат" может отсутствовать.
+    """
     lang = detect_language(body.query)
+    query_norm = normalized(body.query)
     terms = query_terms(body.query, lang)
     if not terms:
         return products[:MAX_CANDIDATES]
 
+    amp_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:a|а|ампер(?:а|ов)?)\b", query_norm)
+    requested_amp = amp_match.group(1) if amp_match else None
+    wants_breaker = bool(re.search(r"\b(?:автомат|автоматическ\w*|выключател\w*)\b", query_norm))
+    wants_1p = bool(re.search(r"\b(?:1p|1ф|однополюс\w*)\b", query_norm))
+    wants_3p = bool(re.search(r"\b(?:3p|3ф|трехполюс\w*|трёхполюс\w*)\b", query_norm))
+
     scored: list[tuple[float, Product]] = []
     for p in products:
         name = normalized(p.name)
-        blob = normalized(p.search_text or (p.name + " " + json.dumps(p.characteristics, ensure_ascii=False)))
+        # URL EKT часто содержит категорию товара, поэтому используем его только
+        # как дополнительный поисковый сигнал, не как пользовательские данные.
+        blob = normalized(" ".join(filter(None, [
+            p.search_text, p.name, p.url or "",
+            json.dumps(p.characteristics, ensure_ascii=False),
+        ])))
         name_tokens = [stem_token(x) for x in re.findall(r"[a-zа-я0-9.]+", name)]
         blob_tokens = [stem_token(x) for x in re.findall(r"[a-zа-я0-9.]+", blob)]
 
@@ -591,9 +625,34 @@ def candidates(products: list[Product], body: ChatRequest) -> list[Product]:
                 score += 2
                 matched += 1
 
-        if matched:
+        if requested_amp:
+            amp = re.escape(requested_amp)
+            if re.search(rf"(?<!\d)(?:[bcd])?{amp}\s*a\b", blob):
+                score += 18
+                matched += 1
+
+        if wants_1p and re.search(r"\b(?:1p|1ф|1пол\w*)\b", blob):
+            score += 12
+            matched += 1
+        if wants_3p and re.search(r"\b(?:3p|3ф|3пол\w*)\b", blob):
+            score += 12
+            matched += 1
+
+        if wants_breaker:
+            breaker_signal = bool(
+                re.search(r"автомат|avtomat|выключател|vykluchatel", blob)
+                or re.search(r"\b(?:ab|ав)\b", name)
+            )
+            if breaker_signal:
+                score += 16
+                matched += 1
+            else:
+                # Не исключаем товар жёстко, но сильно понижаем розетки/боксы и т.п.
+                score -= 8
+
+        if matched and score > 0:
             coverage = matched / max(len(terms), 1)
-            score += coverage * 10
+            score += min(coverage, 1.0) * 10
             if p.stock is not None and p.stock > 0:
                 score += 0.5
             scored.append((score, p))
@@ -603,14 +662,12 @@ def candidates(products: list[Product], body: ChatRequest) -> list[Product]:
 
 
 def query_for_catalog(client: openai.OpenAI, query: str) -> str:
-    """Каталог EKT в основном русскоязычный, поэтому EN/KK запрос переводим для поиска.
+    """Нормализует любой запрос в короткую русскую поисковую формулировку.
 
-    Числа, артикулы, маркировки и модели должны сохраниться без изменений.
-    Финальный ответ при этом остаётся на языке пользователя.
+    Это используется и для RU: разговорные формулировки вроде
+    "автомат 16 ампер однополюсный" модель переводит в каталоговые обозначения
+    (например, "автоматический выключатель 1P 16A"), сохраняя артикулы и модели.
     """
-    lang = detect_language(query)
-    if lang == "ru":
-        return query
     try:
         response = client.responses.parse(
             model=MODEL,
@@ -618,10 +675,12 @@ def query_for_catalog(client: openai.OpenAI, query: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Convert the user's electrical-product request into a short Russian "
-                        "catalog search query. Preserve brands, model names, article numbers, "
-                        "voltages, amperages, dimensions and cable markings exactly. Return only "
-                        "the structured field catalog_query_ru."
+                        "Rewrite the user's electrical-product request as a short Russian catalog "
+                        "search query. Use common catalog notation when it helps: for example "
+                        "однополюсный -> 1P/1ф, 16 ампер -> 16A. Preserve brands, model names, "
+                        "article numbers, voltages, amperages, dimensions and cable markings exactly. "
+                        "Do not add a brand or technical requirement the user did not request. "
+                        "Return only the structured field catalog_query_ru."
                     ),
                 },
                 {"role": "user", "content": query},
@@ -633,7 +692,7 @@ def query_for_catalog(client: openai.OpenAI, query: str) -> str:
         if response.status == "completed" and response.output_parsed is not None:
             return response.output_parsed.catalog_query_ru
     except Exception as exc:
-        log.warning("Catalog query translation failed: %s", type(exc).__name__)
+        log.warning("Catalog query rewrite failed: %s", type(exc).__name__)
     return query
 
 
@@ -990,4 +1049,4 @@ def chat(body: ChatRequest, request: Request) -> ChatResponse:
         log.error("Unexpected backend error: %s", type(exc).__name__)
         fail(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.")
 
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")git status
