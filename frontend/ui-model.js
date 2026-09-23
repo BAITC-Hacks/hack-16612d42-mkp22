@@ -34,8 +34,60 @@ export function characteristics(value) {
 }
 
 export function productCode(product) {
+  if (typeof product.article === 'string' && product.article.trim()) return t('products.sku', { id: product.article });
   const article = characteristics(product.characteristics).find(([key]) => /^(артикул|article|sku)$/i.test(key));
   return t(article ? 'products.sku' : 'products.code', { id: article ? article[1] : product.id });
+}
+
+export function productUnit(product) {
+  return typeof product.unit === 'string' && product.unit.trim() ? product.unit : t('products.unitFallback');
+}
+
+export function displayCharacteristics(value) {
+  const internal = /^(?:BRAND_PRIORITY|CML2_.*|IMYAKARTINKI|NOVINKA|SPETSPREDLOZHENIE|RECOMMEND|KRATNOST_.*)$/i;
+  return characteristics(value).filter(([key]) => !/сертификат|certificate/i.test(key)
+    && !key.split(' · ').some(part => internal.test(part.trim().split(/\s+/)[0])));
+}
+
+export function minOrder(product) {
+  return Number.isFinite(product.min_order) && product.min_order > 0 ? product.min_order : null;
+}
+
+export function initialQuantity(product) {
+  return minOrder(product) ?? Math.min(1, product.stock);
+}
+
+export function quantityError(product, quantity) {
+  if (!Number.isFinite(quantity) || quantity <= 0) return 'invalid';
+  if (!Number.isFinite(product.stock) || quantity > Math.min(product.stock, 1_000_000)) return 'maximum';
+  const minimum = minOrder(product);
+  if (minimum !== null) {
+    if (quantity < minimum) return 'minimum';
+    const multiple = quantity / minimum;
+    // Decimal quantities such as 0.3 / 0.1 are subject to floating-point rounding.
+    if (Math.abs(multiple - Math.round(multiple)) > 1e-7) return 'multiple';
+  }
+  return null;
+}
+
+export function availableStores(product) {
+  return Array.isArray(product.stores) ? product.stores.filter(store => store
+    && typeof store.name === 'string' && store.name.trim()
+    && Number.isFinite(store.quantity) && store.quantity > 0) : [];
+}
+
+export function catalogUrl(value) {
+  if (typeof value === 'string' && /^\/(?!\/)/.test(value)) {
+    try { return safeUrl(new URL(value, 'https://ekt.kz').href); } catch { return null; }
+  }
+  return safeUrl(value);
+}
+
+export function storeUrl(value) {
+  const url = catalogUrl(value);
+  if (!url) return null;
+  const host = new URL(url).hostname;
+  return host === 'ekt.kz' || host.endsWith('.ekt.kz') ? url : null;
 }
 
 export function certificate(product) {

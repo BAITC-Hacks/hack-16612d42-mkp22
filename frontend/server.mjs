@@ -1,11 +1,16 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const port = Number(process.env.PORT || 5173);
-const backend = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/cart', ['cart/index.html', 'text/html; charset=utf-8']],
+  ['/cart/', ['cart/index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/cart.js', ['cart.js', 'text/javascript; charset=utf-8']],
+  ['/cart-api.js', ['cart-api.js', 'text/javascript; charset=utf-8']],
+  ['/cart.css', ['cart.css', 'text/css; charset=utf-8']],
   ['/ui-model.js', ['ui-model.js', 'text/javascript; charset=utf-8']],
   ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
   ['/locales.js', ['locales.js', 'text/javascript; charset=utf-8']],
@@ -14,37 +19,79 @@ const files = new Map([
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
 ]);
 
-http.createServer(async (req, res) => {
-  const path = new URL(req.url, 'http://localhost').pathname;
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  if ((path === '/api/chat' && req.method === 'POST') || (path === '/health' && req.method === 'GET')) {
+export function createFrontendServer({
+  backend = process.env.BACKEND_URL || 'http://127.0.0.1:8000',
+  staticRoot = new URL('./', import.meta.url),
+  timeoutMs = 120_000,
+  maxBodyBytes = 100_000,
+} = {}) {
+  return http.createServer(async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    let requestUrl;
     try {
-      let body = '';
-      for await (const chunk of req) {
-        body += chunk;
-        if (Buffer.byteLength(body) > 100_000) {
-          res.writeHead(413).end();
-          return;
-        }
-      }
-      const upstream = await fetch(new URL(path, backend), {
-        method: req.method,
-        headers: { 'Content-Type': 'application/json' },
-        body: req.method === 'POST' ? body : undefined,
-        signal: AbortSignal.timeout(120_000),
-      });
-      res.writeHead(upstream.status, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(await upstream.text());
+      requestUrl = new URL(req.url, 'http://localhost');
     } catch {
-      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ detail: { code: 'FRONTEND_PROXY_UNAVAILABLE', message: 'Assistant service unavailable.' } }));
+      res.writeHead(400).end();
+      return;
     }
-    return;
-  }
-  const file = files.get(path);
-  if (!file || req.method !== 'GET') { res.writeHead(404).end(); return; }
-  try {
-    res.writeHead(200, { 'Content-Type': file[1] });
-    res.end(await readFile(new URL(file[0], import.meta.url)));
-  } catch { res.writeHead(500).end('Unable to load UI'); }
-}).listen(port, '127.0.0.1', () => console.log(`EKT UI: http://localhost:${port}`));
+    const path = requestUrl.pathname;
+    const apiRequest = (path === '/api/chat' && req.method === 'POST')
+      || (path === '/api/cart' && req.method === 'GET');
+    if (apiRequest || (path === '/health' && req.method === 'GET')) {
+      try {
+        const chunks = [];
+        let bodyBytes = 0;
+        for await (const chunk of req) {
+          bodyBytes += chunk.length;
+          if (bodyBytes > maxBodyBytes) {
+            res.writeHead(413).end();
+            return;
+          }
+          chunks.push(chunk);
+        }
+        const headers = {};
+        if (req.headers.accept) headers.Accept = req.headers.accept;
+        if (req.method === 'POST') {
+          headers['Content-Type'] = req.headers['content-type'] || 'application/json';
+        }
+        // Session cookies belong only to the configured API, never other destinations.
+        if (apiRequest && req.headers.cookie) headers.Cookie = req.headers.cookie;
+        const upstream = await fetch(new URL(path + requestUrl.search, backend), {
+          method: req.method,
+          headers,
+          body: req.method === 'POST' ? Buffer.concat(chunks) : undefined,
+          redirect: 'manual',
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        const responseBody = Buffer.from(await upstream.arrayBuffer());
+        const responseHeaders = { 'Cache-Control': 'no-store' };
+        const contentType = upstream.headers.get('content-type');
+        if (contentType) responseHeaders['Content-Type'] = contentType;
+        if (apiRequest) {
+          const cookies = upstream.headers.getSetCookie();
+          if (cookies.length) responseHeaders['Set-Cookie'] = cookies;
+        }
+        const location = upstream.headers.get('location');
+        if (location) responseHeaders.Location = location;
+        res.writeHead(upstream.status, responseHeaders);
+        res.end(responseBody);
+      } catch {
+        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ detail: { code: 'FRONTEND_PROXY_UNAVAILABLE', message: 'Assistant service unavailable.' } }));
+      }
+      return;
+    }
+    const file = files.get(path);
+    if (!file || req.method !== 'GET') { res.writeHead(404).end(); return; }
+    try {
+      const body = await readFile(new URL(file[0], staticRoot));
+      res.writeHead(200, { 'Content-Type': file[1] });
+      res.end(body);
+    } catch { res.writeHead(500).end('Unable to load UI'); }
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const port = Number(process.env.PORT || 5173);
+  createFrontendServer().listen(port, '127.0.0.1', () => console.log(`EKT UI: http://localhost:${port}`));
+}

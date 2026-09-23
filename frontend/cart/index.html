@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#007f46">
+  <meta name="description" content="" data-i18n-content="cart.pageDescription">
+  <title data-i18n="cart.documentTitle"></title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/cart.css">
+  <script type="module" src="/cart.js"></script>
+</head>
+<body class="cart-page">
+  <a class="skip-link" href="#cart-content" data-i18n="cart.skip"></a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" data-i18n-aria="brand.home"><span class="brand-mark">ekt<span>.</span></span><span class="brand-name"><span data-i18n="brand.name"></span><small data-i18n="brand.tagline"></small></span></a>
+      <div class="header-actions">
+        <label class="language-control"><span class="sr-only" data-i18n="language.label"></span><select id="language" data-i18n-aria="language.label"><option value="ru" lang="ru">RU</option><option value="kz" lang="kk">ҚАЗ</option><option value="en" lang="en">EN</option></select></label>
+        <a class="button button-secondary cart-back" href="/" data-i18n="cart.back"></a>
+      </div>
+    </div>
+  </header>
+  <main class="cart-main" id="cart-content" tabindex="-1">
+    <div class="cart-heading"><div><p class="eyebrow">EKT</p><h1 data-i18n="cart.title"></h1><p data-i18n="cart.description"></p></div><button id="cart-refresh" type="button" class="button button-secondary" data-i18n="cart.refresh"></button></div>
+    <section id="cart-result" aria-busy="true" data-i18n-aria="cart.title"></section>
+  </main>
+  <div id="cart-announcement" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

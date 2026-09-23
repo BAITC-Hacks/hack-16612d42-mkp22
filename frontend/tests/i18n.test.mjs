@@ -18,9 +18,11 @@ test('all languages have complete dictionaries and matching interpolation parame
 });
 
 test('HTML localization markers and literal translation keys exist', async () => {
-  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  for (const match of html.matchAll(/data-i18n(?:-aria|-placeholder|-title|-content)?="([^"]+)"/g)) assert.ok(translations.ru[match[1]], match[1]);
-  for (const file of ['app.js', 'ui-model.js']) {
+  for (const file of ['index.html', 'cart/index.html']) {
+    const html = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+    for (const match of html.matchAll(/data-i18n(?:-aria|-placeholder|-title|-content)?="([^"]+)"/g)) assert.ok(translations.ru[match[1]], `${file}: ${match[1]}`);
+  }
+  for (const file of ['app.js', 'ui-model.js', 'cart.js', 'cart-api.js']) {
     const code = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
     for (const match of code.matchAll(/\bt\('([^']+)'/g)) assert.ok(translations.ru[match[1]], `${file}: ${match[1]}`);
   }

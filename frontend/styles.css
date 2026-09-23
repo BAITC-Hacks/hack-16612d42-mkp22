@@ -165,6 +165,15 @@ h1 { margin: 0 0 9px; font-size: clamp(30px, 2.7vw, 36px); line-height: 1.2; fon
 .product-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 .product-actions .button { width: 100%; font-size: 15px; }
 .product-card img, .modal-body img { display: block; max-width: 100%; height: auto; object-fit: contain; }
+.product-image { display: grid; place-items: center; min-width: 0; min-height: 160px; margin: 0 0 16px; padding: 12px; border-radius: 10px; background: #f7f9f7; }
+.product-image img { width: 100%; height: 160px; object-fit: contain; }
+.product-image img[hidden] { display: none; }
+.modal-body .product-image { margin-top: 16px; }
+.modal-body .product-image img { height: 220px; }
+.product-image .muted-note { margin: 0; text-align: center; }
+.store-stocks { margin-top: 22px; }
+.store-stocks h3 { font-size: 18px; }
+.quantity-error { margin: 8px 0 0; color: #963b26; font-size: 14px; line-height: 1.5; }
 .certificate-link { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; margin: 10px 0; min-height: 44px; }
 .muted-note { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 9px 0; }
 .state-panel { border: 1px solid var(--border); background: #f8faf8; padding: 20px; border-radius: 12px; margin-top: 16px; }

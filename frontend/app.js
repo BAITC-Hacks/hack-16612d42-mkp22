@@ -1,18 +1,17 @@
-import { safeUrl, characteristics, productCode, certificate, selectable, money, validResponse } from './ui-model.js';
+import { safeUrl, displayCharacteristics, productCode, productUnit, minOrder, initialQuantity, quantityError, availableStores, catalogUrl, storeUrl, certificate, selectable, money, validResponse } from './ui-model.js';
 import { t, bind, getLanguage, getLocale, setLanguage, applyTranslations, onLanguageChange, pruneBindings } from './i18n.js';
 import { translations } from './locales.js';
 import { createChatPayload } from './api.js';
 import { observeViewport } from './viewport.js';
+import { updateCartCount } from './cart-api.js';
 
 const $ = selector => document.querySelector(selector);
 const conversation = $('#conversation');
 const history = [];
-const selected = new Map();
 let busy = false;
 let pendingProposal = null;
 let confirmation = [];
 let retryRequest = null;
-let lastCartUrl = null;
 let lastResponseId = 0;
 
 function node(tag, text, className) {
@@ -114,7 +113,7 @@ function clearProposal(key = 'confirmation.closed') {
   pendingProposal = null;
 }
 function specs(product, limit = Infinity) {
-  const getRows = () => characteristics(product.characteristics).filter(([key]) => !/сертификат|certificate/i.test(key));
+  const getRows = () => displayCharacteristics(product.characteristics);
   const rows = getRows();
   if (!rows.length) return lnode('p', 'products.noSpecs', 'muted-note');
   const dl = node('dl', null, 'spec-list');
@@ -128,7 +127,43 @@ function stockBadge(product) {
   const stock = product.stock;
   if (stock == null || !Number.isFinite(stock)) return lnode('span', 'products.stockUnknown', 'badge badge-unknown');
   if (stock <= 0) return lnode('span', 'products.unavailable', 'badge badge-unavailable');
-  return lnode('span', 'products.available', 'badge badge-stock', () => ({ stock, unit: product.unit || '' }));
+  return lnode('span', 'products.available', 'badge badge-stock', () => ({ stock, unit: productUnit(product) }));
+}
+function productImage(product) {
+  const url = catalogUrl(product.image);
+  if (!url) return null;
+  const frame = node('div', null, 'product-image');
+  const img = node('img');
+  img.loading = 'lazy'; img.decoding = 'async'; img.width = 320; img.height = 200;
+  img.referrerPolicy = 'no-referrer';
+  bind(img, () => t('products.imageAlt', { name: product.name }), 'alt');
+  const fallback = lnode('p', 'products.imageUnavailable', 'muted-note'); fallback.hidden = true;
+  img.addEventListener('error', () => { img.hidden = true; fallback.hidden = false; }, { once: true });
+  img.src = url;
+  frame.append(img, fallback);
+  return frame;
+}
+function productLink(product) {
+  const url = storeUrl(product.url);
+  if (!url) return null;
+  const link = lnode('a', 'products.openStore', 'button button-secondary');
+  link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+  bind(link, () => t('products.openStoreLabel', { name: product.name }), 'aria-label');
+  return link;
+}
+function stockByCity(product) {
+  const stores = availableStores(product);
+  if (!stores.length) return null;
+  const section = node('section', null, 'store-stocks');
+  section.append(lnode('h3', 'products.storesTitle'));
+  const list = node('dl', null, 'spec-list');
+  for (const store of stores) {
+    const row = node('div', null, 'spec-row');
+    row.append(node('dt', store.name), lnode('dd', 'products.storeQuantity', null, () => ({ stock: store.quantity, unit: productUnit(product) })));
+    list.append(row);
+  }
+  section.append(list);
+  return section;
 }
 function certificateInfo(product, showMissing = false) {
   const cert = certificate(product);
@@ -143,7 +178,7 @@ function certificateInfo(product, showMissing = false) {
 function price(product) {
   const el = node('div', null, 'product-price');
   el.append(dynamicNode('span', () => money(product.price, product.currency)));
-  if (product.price != null && product.unit) el.append(node('small', ` / ${product.unit}`));
+  if (product.price != null) el.append(dynamicNode('small', () => ` / ${productUnit(product)}`));
   return el;
 }
 function askAbout(product) {
@@ -151,15 +186,18 @@ function askAbout(product) {
   return send(query.slice(0, 2000));
 }
 function productAction(product) {
-  if (selectable(product)) return button('cart.add', () => openConfirmation([{ product, quantity: Math.min(1, product.stock) }]), 'button-primary', true);
+  if (selectable(product)) return button('cart.add', () => openConfirmation([{ product, quantity: initialQuantity(product) }]), 'button-primary', true);
   return button(product.stock === 0 ? 'products.findAnalogue' : 'products.checkStock', () => askAbout(product), 'button-secondary', true);
 }
 function openDetails(product) {
   const body = $('#product-detail'); body.replaceChildren();
   body.append(dynamicNode('p', () => productCode(product), 'product-code'), node('h3', product.name), stockBadge(product));
+  const photo = productImage(product); if (photo) body.append(photo);
   if (product.kind === 'possible_analogue') body.append(lnode('p', 'products.analogueNote', 'muted-note'));
   body.append(price(product), node('p', product.reason, 'product-reason'), specs(product));
+  const stores = stockByCity(product); if (stores) body.append(stores);
   const cert = certificateInfo(product, true); if (cert) body.append(cert);
+  const link = productLink(product); if (link) body.append(link);
   const action = productAction(product);
   action.addEventListener('click', () => { if ($('#product-dialog').open) $('#product-dialog').close(); });
   body.append(action);
@@ -179,13 +217,16 @@ function renderProducts(parent, products) {
     const top = node('div', null, 'product-topline');
     if (product.kind === 'possible_analogue') top.append(lnode('span', 'products.analogue', 'badge badge-analogue'));
     top.append(dynamicNode('span', () => productCode(product), 'product-code'));
-    card.append(top, node('h3', product.name), stockBadge(product), specs(product, 3));
+    card.append(top);
+    const photo = productImage(product); if (photo) card.append(photo);
+    card.append(node('h3', product.name), stockBadge(product), specs(product, 3));
     if (product.reason) card.append(node('p', product.reason, 'product-reason'));
     if (product.kind === 'possible_analogue') card.append(lnode('p', 'products.compatibility', 'muted-note'));
     const cert = certificateInfo(product); if (cert) card.append(cert);
     card.append(price(product));
     const actions = node('div', null, 'product-actions');
     actions.append(button('products.details', () => openDetails(product)), productAction(product));
+    const link = productLink(product); if (link) actions.append(link);
     card.append(actions);
     if (!selectable(product)) card.append(lnode('p', 'products.selectionRequirements', 'muted-note'));
     grid.append(card);
@@ -207,23 +248,28 @@ function openConfirmation(items) {
     const control = node('div', null, 'quantity-control');
     const label = lnode('label', 'confirmation.quantity'); label.htmlFor = `quantity-${index}`;
     const input = node('input');
-    input.id = label.htmlFor; input.type = 'number'; input.min = '0'; input.step = 'any'; input.max = String(Math.min(product.stock, 1_000_000)); input.required = true;
+    const minimum = minOrder(product);
+    input.id = label.htmlFor; input.type = 'number'; input.min = String(minimum ?? 0); input.step = minimum === null ? 'any' : String(minimum); input.max = String(Math.min(product.stock, 1_000_000)); input.required = true;
     input.value = String(item.quantity); input.inputMode = 'decimal';
-    bind(input, () => t(product.unit ? 'confirmation.quantityLabel' : 'confirmation.quantityLabelWithoutUnit', { name: product.name, unit: product.unit || '' }), 'aria-label');
+    bind(input, () => t('confirmation.quantityLabel', { name: product.name, unit: productUnit(product) }), 'aria-label');
     input.addEventListener('input', () => {
       item.quantity = input.valueAsNumber;
       validateQuantity(input, item);
       updateTotal();
     });
-    control.append(label, input);
-    if (product.unit) control.append(node('span', product.unit));
-    row.append(control); container.append(row);
+    control.append(label, input, dynamicNode('span', () => productUnit(product)));
+    row.append(control);
+    if (minimum !== null) row.append(lnode('p', 'products.minimumOrder', 'muted-note', () => ({ count: minimum, unit: productUnit(product) })));
+    const error = node('p', null, 'quantity-error'); error.id = `quantity-error-${index}`; error.hidden = true; error.setAttribute('aria-live', 'polite');
+    input.setAttribute('aria-describedby', error.id);
+    row.append(error); container.append(row);
+    validateQuantity(input, item);
   });
   updateTotal();
   $('#confirm-dialog').showModal();
 }
 function updateTotal() {
-  const valid = confirmation.every(item => Number.isFinite(item.quantity) && item.quantity > 0 && item.quantity <= Math.min(item.product.stock, 1_000_000));
+  const valid = confirmation.length > 0 && confirmation.every(item => !quantityError(item.product, item.quantity));
   $('#confirm-submit').disabled = !valid;
   const currencies = new Set(confirmation.map(item => item.product.currency));
   if (valid && currencies.size === 1 && [...currencies][0] && confirmation.every(item => Number.isFinite(item.product.price))) {
@@ -233,8 +279,13 @@ function updateTotal() {
 }
 
 function validateQuantity(input, item) {
-  const stock = Math.min(item.product.stock, 1_000_000);
-  input.setCustomValidity(!Number.isFinite(item.quantity) || item.quantity <= 0 ? t('confirmation.quantityInvalid') : item.quantity > stock ? t('confirmation.quantityMaximum', { stock, unit: item.product.unit || '' }) : '');
+  const code = quantityError(item.product, item.quantity);
+  const keys = { invalid: 'confirmation.quantityInvalid', maximum: 'confirmation.quantityMaximum', minimum: 'confirmation.quantityMinimum', multiple: 'confirmation.quantityMultiple' };
+  const text = code ? t(keys[code], { stock: Math.min(item.product.stock, 1_000_000), count: minOrder(item.product), unit: productUnit(item.product) }) : '';
+  input.setCustomValidity(text);
+  input.setAttribute('aria-invalid', String(Boolean(code)));
+  const error = document.getElementById(input.getAttribute('aria-describedby'));
+  if (error) { error.textContent = text; error.hidden = !code; }
 }
 
 function renderProposal(parent, data, responseId) {
@@ -244,7 +295,7 @@ function renderProposal(parent, data, responseId) {
   const panel = node('div', null, 'state-panel confirmation-proposal');
   panel.append(lnode('h3', 'confirmation.pendingTitle'), lnode('p', 'confirmation.pendingDescription'));
   const list = node('ul', null, 'proposal-list');
-  for (const item of items) list.append(node('li', `${item.product.name} — ${item.quantity} ${item.product.unit || ''}`.trim()));
+  for (const item of items) list.append(dynamicNode('li', () => `${item.product.name} — ${item.quantity} ${productUnit(item.product)}`));
   panel.append(list, button('confirmation.review', () => { if (responseId === lastResponseId) openConfirmation(items); }, 'button-primary', true));
   panel.append(button('common.cancel', () => clearProposal('confirmation.cancelled')));
   parent.append(panel); pendingProposal = panel;
@@ -252,40 +303,17 @@ function renderProposal(parent, data, responseId) {
 function renderOutcome(parent, data, requestedItems) {
   if (data.cart.status !== 'confirmed' || !requestedItems.length) return;
   const added = data.cart.added_to_cart === true;
-  lastCartUrl = added ? safeUrl(data.cart.cart_url) : null;
   const panel = node('div', null, `state-panel ${added ? 'success cart-success' : 'selection-confirmed'}`);
   panel.append(lnode('h3', added ? 'cart.success' : 'selection.confirmed'));
   panel.append(lnode('p', added ? 'cart.successDescription' : 'selection.confirmedDescription'));
-  for (const item of data.cart.items) {
-    const product = data.products.find(p => p.id === item.product_id);
-    if (product) selected.set(product.id, { product, quantity: item.quantity, added });
-  }
-  $('#selection-count').textContent = String(selected.size);
-  if (added && lastCartUrl) {
-    const link = lnode('a', 'cart.open', 'button button-primary');
-    link.href = lastCartUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; panel.append(link);
-  } else panel.append(button('selection.view', openSelection));
+  const link = lnode('a', 'cart.open', 'button button-primary');
+  const cartUrl = added ? safeUrl(data.cart.cart_url) : null;
+  link.href = cartUrl || '/cart';
+  if (cartUrl && new URL(cartUrl).origin !== window.location.origin) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+  panel.append(link);
+  if (added) updateCartCount($('#selection-count'));
   parent.append(panel);
   announce(added ? 'cart.successAnnouncement' : 'selection.confirmedAnnouncement');
-}
-function openSelection() {
-  const container = $('#selection-content'); container.replaceChildren();
-  if (!selected.size) {
-    const empty = node('div', null, 'selection-empty');
-    empty.append(icon('cart'), lnode('h3', 'selection.empty'), lnode('p', 'selection.emptyDescription'));
-    empty.append(button('selection.find', () => { $('#selection-dialog').close(); $('#query').focus(); }, 'button-primary'));
-    container.append(empty);
-  } else {
-    container.append(lnode('p', 'selection.description'));
-    for (const { product, quantity, added } of selected.values()) {
-      const entry = node('section', null, 'selection-entry');
-      const quantityText = `${quantity} ${product.unit || ''}`.trim();
-      entry.append(node('h3', product.name), dynamicNode('p', () => `${quantityText} · ${productCode(product)}`, 'muted-note'));
-      entry.append(lnode('span', added ? 'cart.added' : 'selection.confirmedBadge', 'badge badge-stock')); container.append(entry);
-    }
-  }
-  if (![...selected.values()].some(item => item.added)) container.append(lnode('p', 'selection.notOrder', 'muted-note'));
-  $('#selection-dialog').showModal();
 }
 
 async function send(query, items = [], retry = false) {
@@ -316,6 +344,7 @@ async function send(query, items = [], retry = false) {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(createChatPayload({ query, history: previousHistory, confirmCart, language: getLanguage() })),
       signal: AbortSignal.timeout(125_000),
     });
@@ -341,7 +370,8 @@ async function send(query, items = [], retry = false) {
       const details = node('details'); details.append(lnode('summary', 'chat.warnings'));
       const list = node('ul');
       data.warnings.filter(warning => typeof warning === 'string').forEach(warning => {
-        const key = ['warnings.catalog', 'warnings.analogues'].find(key => translations.ru[key] === warning);
+        const key = ['Остатки — снимок каталога, не резерв. API корзины ekt.kz не подключён.', 'Остатки — снимок detail API EKT, не резерв. API корзины ekt.kz не подключён.'].includes(warning)
+          ? 'warnings.catalog' : ['warnings.catalog', 'warnings.analogues'].find(key => translations.ru[key] === warning);
         // Unknown catalog/AI prose is source data; do not translate it heuristically.
         list.append(key ? lnode('li', key) : node('li', warning));
       });
@@ -397,7 +427,7 @@ $('#confirm-form').addEventListener('submit', event => {
   if (busy || $('#confirm-submit').disabled || !$('#confirm-form').reportValidity()) return;
   const items = confirmation.map(item => ({ ...item }));
   $('#confirm-dialog').close();
-  const description = items.map(item => t('confirmation.item', { name: item.product.name.slice(0, 160), id: item.product.id, count: item.quantity, unit: item.product.unit || '' }).trim()).join('; ');
+  const description = items.map(item => t('confirmation.item', { name: item.product.name.slice(0, 160), id: item.product.id, count: item.quantity, unit: productUnit(item.product) })).join('; ');
   send(t('confirmation.query', { items: description }).slice(0, 2000), items);
 });
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(`#${el.dataset.close}`).close()));
@@ -413,7 +443,6 @@ $('#retry').addEventListener('click', () => {
   else send(query, [], true);
 });
 $('#error-close').addEventListener('click', () => { $('#error').hidden = true; });
-$('#selection-open').addEventListener('click', openSelection);
 $('#help-example').addEventListener('click', () => {
   $('#query').value = t('help.exampleQuery');
   updateInput(); $('#query').focus();
@@ -422,11 +451,11 @@ $('#scroll-latest').addEventListener('click', scrollLatest);
 conversation.addEventListener('scroll', () => { $('#scroll-latest').hidden = !$('#welcome').hidden || nearBottom(); }, { passive: true });
 $('#reset').addEventListener('click', () => {
   if (busy) return;
-  clearProposal(); history.length = 0; selected.clear(); retryRequest = null; lastCartUrl = null;
+  clearProposal(); history.length = 0; retryRequest = null;
   conversation.querySelectorAll('.message').forEach(el => el.remove());
   pruneBindings();
   $('#welcome').hidden = false; $('#error').hidden = true; $('#scroll-latest').hidden = true;
-  $('#selection-count').textContent = '0'; $('#query').value = ''; updateInput();
+  $('#query').value = ''; updateInput();
   conversation.scrollTop = 0; $('#query').focus(); announce('chat.newAnnouncement');
 });
 fetch('/health', { signal: AbortSignal.timeout(5000) })
@@ -444,4 +473,7 @@ onLanguageChange(() => {
 });
 applyTranslations();
 bind($('#send-label'), () => t(busy ? 'chat.waiting' : 'chat.send'));
+updateCartCount($('#selection-count'));
+window.addEventListener('pageshow', event => { if (event.persisted) updateCartCount($('#selection-count')); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) updateCartCount($('#selection-count')); });
 updateInput();
