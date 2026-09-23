@@ -6,6 +6,7 @@ const backend = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/ui-model.js', ['ui-model.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
 ]);
 
