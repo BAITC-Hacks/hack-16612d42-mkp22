@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 import openai
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -112,7 +113,9 @@ class RecommendedProduct(Product):
 class CartState(Schema):
     status: Literal["not_requested", "awaiting_confirmation", "confirmed"]
     items: list[CartItem] = Field(default_factory=list)
-    added_to_cart: Literal[False] = False  # API корзины не предоставлен.
+    # Корзина прототипа (сессия на сервере), не корзина ekt.kz: её API не предоставлен.
+    added_to_cart: bool = False
+    cart_url: str | None = None
 
 
 class ChatResponse(Schema):
@@ -992,7 +995,21 @@ def health(request: Request):
     return {"status": "ok", "catalog": request.app.state.catalog.status()}
 
 
-def handle_chat(body: ChatRequest, request: Request) -> ChatResponse:
+CART_COOKIE = "ekt_cart"
+CARTS: dict[str, dict[str, float]] = {}  # session id -> {product_id: quantity}
+CARTS_LOCK = Lock()
+
+
+def cart_session(request: Request, response: Response) -> str:
+    """Корзина привязана к HttpOnly cookie; клиент не может задать чужую корзину."""
+    sid = request.cookies.get(CART_COOKIE) or ""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", sid):
+        sid = secrets.token_urlsafe(32)
+    response.set_cookie(CART_COOKIE, sid, httponly=True, samesite="lax", path="/", max_age=7 * 24 * 3600)
+    return sid
+
+
+def handle_chat(body: ChatRequest, request: Request, response: Response) -> ChatResponse:
     # Синхронные httpx/OpenAI вызовы: FastAPI запускает этот def в thread pool.
     products, checked_at = request.app.state.catalog.get(fresh=False)
     index = {p.id: p for p in products}
@@ -1008,15 +1025,27 @@ def handle_chat(body: ChatRequest, request: Request) -> ChatResponse:
         )
         fresh_index = {p.id: p for p in fresh_products}
         validate_cart(body.confirm_cart, fresh_index, 409)
+        # Запись в корзину — только здесь, после явного подтверждения и свежей проверки остатка.
+        sid = cart_session(request, response)
+        with CARTS_LOCK:
+            cart = CARTS.setdefault(sid, {})
+            for item in body.confirm_cart:
+                stock = fresh_index[item.product_id].stock
+                if stock is None or cart.get(item.product_id, 0) + item.quantity > stock:
+                    fail(409, "CART_UNAVAILABLE", "Недостаточно остатка либо наличие неизвестно.")
+            for item in body.confirm_cart:
+                cart[item.product_id] = cart.get(item.product_id, 0) + item.quantity
         selected = [RecommendedProduct(
             **fresh_index[item.product_id].model_dump(),
             reason="Позиция явно подтверждена пользователем.", kind="match",
         ) for item in body.confirm_cart]
         return ChatResponse(
-            answer="Подтверждение получено. Товары ещё не добавлены в корзину ekt.kz: "
-                   "интеграция с API корзины не подключена.",
+            answer="Готово: товары добавлены в корзину. Откройте корзину по ссылке, чтобы проверить заказ.",
             products=selected,
-            cart=CartState(status="confirmed", items=body.confirm_cart),
+            cart=CartState(
+                status="confirmed", items=body.confirm_cart,
+                added_to_cart=True, cart_url=str(request.base_url) + "cart/",
+            ),
             catalog_checked_at=datetime.now(timezone.utc), warnings=warnings,
         )
 
@@ -1204,10 +1233,39 @@ def catalog_search(
     }
 
 
+@app.get("/api/cart")
+def get_cart(request: Request):
+    """Текущая корзина сессии со свежими ценой и остатком из detail API."""
+    sid = request.cookies.get(CART_COOKIE) or ""
+    with CARTS_LOCK:
+        cart = dict(CARTS.get(sid, {}))
+    if not cart:
+        return {"items": [], "total": 0, "currency": None}
+    products, _ = request.app.state.catalog.get()
+    index = {p.id: p for p in products}
+    base = [index[pid] for pid in cart if pid in index]
+    detailed = {p.id: p for p in request.app.state.catalog.enrich(base, limit=len(base))}
+    items, total, currencies = [], 0.0, set()
+    for pid, quantity in cart.items():
+        p = detailed.get(pid)
+        if p is None:
+            continue
+        items.append({
+            "product_id": pid, "name": p.name, "quantity": quantity, "price": p.price,
+            "currency": p.currency, "stock": p.stock, "url": p.url,
+        })
+        currencies.add(p.currency)
+        if p.price is not None:
+            total += p.price * quantity
+    currency = next(iter(currencies)) if len(currencies) == 1 else None
+    priced = all(item["price"] is not None for item in items)
+    return {"items": items, "total": round(total, 2) if priced and currency else None, "currency": currency}
+
+
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(body: ChatRequest, request: Request) -> ChatResponse:
+def chat(body: ChatRequest, request: Request, response: Response) -> ChatResponse:
     try:
-        return handle_chat(body, request)
+        return handle_chat(body, request, response)
     except HTTPException:
         raise
     except Exception as exc:
