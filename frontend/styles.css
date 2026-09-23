@@ -108,7 +108,6 @@ h1 { margin: 0 0 9px; font-size: clamp(30px, 2.7vw, 36px); line-height: 1.2; fon
 .composer-bottom .button { min-height: 48px; flex: 0 0 auto; max-width: 65%; padding-inline: 24px; }
 .composer-help { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 14px; margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.4; }
 .composer-help>span { min-width: 0; }
-.data-language-note { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
 .help-panel { min-height: 0; min-width: 0; padding: 20px 0 6px; overflow-y: auto; scrollbar-width: thin; }
 .help-panel h2 { font-size: 20px; font-weight: 600; margin: 8px 0 24px; letter-spacing: -.3px; }
 .journey { list-style: none; padding: 0; margin: 0; display: grid; gap: 22px; }
@@ -292,7 +291,6 @@ h1 { margin: 0 0 9px; font-size: clamp(30px, 2.7vw, 36px); line-height: 1.2; fon
   #character-count { font-size: 13px; }
   .keyboard-help { display: none; }
   .composer-help { justify-content: flex-start; font-size: 13px; margin-top: 6px; }
-  .data-language-note { font-size: 13px; }
   .product-grid { grid-template-columns: minmax(0, 1fr); }
   .product-card { padding: 18px; }
   .product-actions { flex-direction: row; flex-wrap: wrap; }
@@ -365,7 +363,7 @@ h1 { margin: 0 0 9px; font-size: clamp(30px, 2.7vw, 36px); line-height: 1.2; fon
   .header-inner { min-height: 56px; padding-top: 5px; padding-bottom: 5px; }
   .page { padding-top: 8px; }
   .page-heading { display: none; }
-  .composer-help, .data-language-note { display: none; }
+  .composer-help { display: none; }
   .composer-area { padding: 8px; }
   .composer textarea { min-height: 30px; max-height: 70px; }
   .composer label, #character-count { display: none; }
@@ -379,7 +377,7 @@ h1 { margin: 0 0 9px; font-size: clamp(30px, 2.7vw, 36px); line-height: 1.2; fon
 body.keyboard-open { position: fixed; top: var(--viewport-offset-top, 0px); left: 0; right: 0; }
 .keyboard-open .header-inner { min-height: 54px; padding-top: 5px; padding-bottom: 5px; }
 .keyboard-open .brand-mark { font-size: 34px; }
-.keyboard-open .brand-name, .keyboard-open .service-label, .keyboard-open .page-heading, .keyboard-open .composer-help, .keyboard-open .data-language-note { display: none; }
+.keyboard-open .brand-name, .keyboard-open .service-label, .keyboard-open .page-heading, .keyboard-open .composer-help { display: none; }
 .keyboard-open .page { padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 .keyboard-open .chat-header { padding-top: 5px; padding-bottom: 5px; }
 .keyboard-open .composer-area { padding: 7px; max-height: 66%; }
